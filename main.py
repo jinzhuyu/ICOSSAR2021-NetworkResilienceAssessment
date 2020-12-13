@@ -184,8 +184,8 @@ class system(object):
             adjmatrix = copy.copy(self.adjmatrix_evol[-1])
         
             for node in self.topo_order:
-                flowin = np.sum(flowmatrix[:, node]*self.convratematrix[:, node]) + self.supply[node]*self.node_fail_evol_track[-1][node] #calculate the total flow going into the node
-                print(node, np.sum(flowmatrix[:, node]*self.convratematrix[:, node]))
+                flowin = np.sum(flowmatrix[:, node]*self.convratematrix[:, node]) + self.supply[node]*(1 - self.node_fail_evol_track[-1][node]) #calculate the total flow going into the node
+                print(node, flowin)
                 #Some flows serve for the node demand value, the remaining part goes to the following distribution process
                 if(flowin >= self.demand[node]):
                     
@@ -278,8 +278,8 @@ class system(object):
 power = network(dt.p_nodedata, dt.p_edgedata)
 gas = network(dt.g_nodedata, dt.g_edgedata)
 s = system(power, gas, dt.g2p_edgedata)
-s.initial_failure('randomness', 0.1) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
-s.cascading_failure(0.3)
+s.initial_failure('kc', 0.1) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
+s.cascading_failure(0.1)
 
 
 
