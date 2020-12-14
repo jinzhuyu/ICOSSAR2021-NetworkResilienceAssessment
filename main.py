@@ -278,7 +278,7 @@ class system(object):
 power = network(dt.p_nodedata, dt.p_edgedata)
 gas = network(dt.g_nodedata, dt.g_edgedata)
 s = system(power, gas, dt.g2p_edgedata)
-s.initial_failure('kc', 0.1) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
+s.initial_failure('randomness', 0.4) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
 s.cascading_failure(0.1)
 
 
