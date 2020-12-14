@@ -37,7 +37,7 @@ class system(object):
         """
         
         self.adjmatrix = np.zeros((self.nodenum, self.nodenum), dtype = int)
-        self.flowmatrix = np.zeros((self.nodenum, self.nodenum), dtype = int)
+        self.flowmatrix = np.zeros((self.nodenum, self.nodenum), dtype = float)
         
         #add the power and gas edges
         self.adjmatrix[0:self.gas.nodenum, 0:self.gas.nodenum] = copy.copy(self.gas.adjmatrix)
@@ -127,8 +127,9 @@ class system(object):
             self.initial_fail_seq = random.sample(range(self.nodenum), fail_num)
         else:
             exec('self.initial_fail_seq = np.argsort(self.{})[-fail_num:]'.format(Type))
-            
-        self.initial_fail_seq_onehotcode[np.array(self.initial_fail_seq)] = 1
+        
+        if(self.initial_fail_seq != []):
+            self.initial_fail_seq_onehotcode[np.array(self.initial_fail_seq)] = 1
         self.initial_fail_link_onehotcode = np.zeros(self.edgenum, dtype = int) #There are no initial failed links
         
     def update_matrix_node_fail(self, adjmatrix, node_fail_seq):
@@ -177,21 +178,20 @@ class system(object):
         self.satisfy_node_evol = [self.demand]
         self.performance = [1]
         self.node_fail_evol_track, self.link_fail_evol_track = [self.initial_fail_seq_onehotcode], [self.initial_fail_link_onehotcode]
-        
+        time = 0
         while(1): #perform the flow redistribution until stable
             satisfynode = copy.copy(self.satisfy_node_evol[-1])
             flowmatrix = copy.copy(self.flowmatrix_evol[-1])
             adjmatrix = copy.copy(self.adjmatrix_evol[-1])
         
             for node in self.topo_order:
-                flowin = np.sum(flowmatrix[:, node]*self.convratematrix[:, node]) + self.supply[node]*self.node_fail_evol_track[-1][node] #calculate the total flow going into the node
-                print(node, np.sum(flowmatrix[:, node]*self.convratematrix[:, node]))
+                flowin = np.sum(flowmatrix[:, node]*self.convratematrix[:, node]) + self.supply[node]*(1 - self.node_fail_evol_track[-1][node]) #calculate the total flow going into the node
                 #Some flows serve for the node demand value, the remaining part goes to the following distribution process
-                if(flowin >= self.demand[node]):
-                    
+                if(np.round(flowin, 3) >= np.round(self.demand[node], 3)):
                     satisfynode[node] = self.demand[node]
                     flowin -= self.demand[node]
                 else:
+                    # print(2, node, flowin, self.demand[node])
                     satisfynode[node] = flowin/2 #if not enough to supply for the demand of the node, supply a half
                     flowin = flowin/2
                 
@@ -225,16 +225,19 @@ class system(object):
                 for i in range(self.edgenum):
                     node1, node2 = self.edgelist[i, 0], self.edgelist[i, 1] 
                     if(np.abs(flowmatrix[node1, node2]) > (1 + alpha)*self.flowcapmatrix[node1, node2]):
+                        # print(node1, node2, flowmatrix[node1, node2], self.flowcapmatrix[node1, node2])
                         link_seq_track[i] = 1
             
                 #node failure caused by flow overload 
                 for i in range(self.nodenum):
                     # print(i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
                     if((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + alpha)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
+                        # print(time, 'node', i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
                         node_seq_track[i] = 1
                 
                 self.node_fail_evol_track.append(node_seq_track)
                 self.link_fail_evol_track.append(link_seq_track)
+            time += 1
                 
             self.satisfy_node_evol.append(satisfynode)
             
@@ -273,13 +276,12 @@ class system(object):
             if(np.sum(link_seq) == 0 and np.sum(node_seq) == 0):
                 break
 
-    
-    
-power = network(dt.p_nodedata, dt.p_edgedata)
-gas = network(dt.g_nodedata, dt.g_edgedata)
+
+power = network(dt.p_nodedata, dt.p_edgedata) #initialize the power network
+gas = network(dt.g_nodedata, dt.g_edgedata) #initialize the gas network
 s = system(power, gas, dt.g2p_edgedata)
-s.initial_failure('randomness', 0.1) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
-s.cascading_failure(0.3)
+s.initial_failure('bc', 0.3) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
+s.cascading_failure(0.5)
 
 
 

@@ -38,7 +38,7 @@ class network(object):
         self.networkx_graph()
         self.topo_sort()
         self.flow_matrix()
-        self.flow_check()
+        # self.flow_check()
         self.centrality()
     def nodeid2num(self):
         """ Mapping the ID of the node to the number of the node in the network
