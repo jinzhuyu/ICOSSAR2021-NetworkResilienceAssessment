@@ -191,7 +191,7 @@ class system(object):
                     satisfynode[node] = self.demand[node]
                     flowin -= self.demand[node]
                 else:
-                    print(2, node, flowin, self.demand[node])
+                    # print(2, node, flowin, self.demand[node])
                     satisfynode[node] = flowin/2 #if not enough to supply for the demand of the node, supply a half
                     flowin = flowin/2
                 
@@ -225,14 +225,14 @@ class system(object):
                 for i in range(self.edgenum):
                     node1, node2 = self.edgelist[i, 0], self.edgelist[i, 1] 
                     if(np.abs(flowmatrix[node1, node2]) > (1 + alpha)*self.flowcapmatrix[node1, node2]):
-                        print(node1, node2, flowmatrix[node1, node2], self.flowcapmatrix[node1, node2])
+                        # print(node1, node2, flowmatrix[node1, node2], self.flowcapmatrix[node1, node2])
                         link_seq_track[i] = 1
             
                 #node failure caused by flow overload 
                 for i in range(self.nodenum):
                     # print(i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
                     if((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + alpha)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
-                        print(time, 'node', i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
+                        # print(time, 'node', i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
                         node_seq_track[i] = 1
                 
                 self.node_fail_evol_track.append(node_seq_track)
@@ -276,12 +276,11 @@ class system(object):
             if(np.sum(link_seq) == 0 and np.sum(node_seq) == 0):
                 break
 
-    
-    
+
 power = network(dt.p_nodedata, dt.p_edgedata) #initialize the power network
 gas = network(dt.g_nodedata, dt.g_edgedata) #initialize the gas network
 s = system(power, gas, dt.g2p_edgedata)
-s.initial_failure('randomness', 0.8) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
+s.initial_failure('bc', 0.3) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
 s.cascading_failure(0.5)
 
 
