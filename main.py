@@ -398,7 +398,7 @@ gas = network(dt.g_nodedata, dt.g_edgedata) #initialize the gas network
 s = system(power, gas, dt.g2p_edgedata)
 #s.initial_failure('randomness', 0.3) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
 #s.cascading_failure(0.5)
-attack_portions=np.round(np.arange(0.05,0.75,0.05),2)
+attack_portions = np.round(np.arange(0.05,0.75,0.05),2)
 performance_df, performance_random_attack_df = compare_attack_types(attack_portions=attack_portions,
                                                                     redun_rate=0.2, n_repeat_random=50)
 plot_performance_different_attack(df=performance_df, is_save=1)
