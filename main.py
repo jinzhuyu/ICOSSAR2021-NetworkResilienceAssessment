@@ -4,14 +4,27 @@ Created on Sat Dec 12 22:47:00 2020
 
 @author: 10624
 """
+
+import numpy as np
+import math
+import random
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+import copy
+import networkx as nx
+
+
+import os
+dir_path = os.path.dirname(os.path.realpath(__file__))    # go to the directory of the current script
+os.chdir('C:/Users/yuj5/Documents/GitHub/ICOSSAR2021')
+
 import data as dt
 from infrasnetwork import network
 import failsimulation as fs
-import copy
-import numpy as np
-import networkx as nx
-import math
-import random
+
+
 
 class system(object):
     """ Couple the power and gas networks
@@ -263,25 +276,131 @@ class system(object):
             
             #Update the adjmatrix caused by failed links
             adjmatrix = self.update_matrix_link_fail(copy.copy(adjmatrix), link_seq)
-            
-                    
+                               
             #Update the flow matrix
             flowmatrix = adjmatrix*flowmatrix
             
             self.adjmatrix_evol.append(adjmatrix)
             self.flowmatrix_evol.append(flowmatrix)
-            
-            
+                        
             #Check the stability: no newly failed nodes and links
             if(np.sum(link_seq) == 0 and np.sum(node_seq) == 0):
                 break
 
 
+#%%
+def compare_attack_types(s=s, attack_types = ['randomness', 'dc', 'bc', 'kc', 'cc'],
+                         attack_portions=np.round(np.arange(0.1,0.55,0.05),2),
+                         redun_rate = 0.2, n_repeat_random=20):
+    '''
+    obtain network performance given different failure types and failure rate
+    
+    inputs:
+        s - a object representing the power-gas systems?
+        n_repeat_random - int: number of repetition for random attacks to obtain the average performance
+    
+    returns:
+        performance_df - df: performance after all types of attacks over 
+        performance_random_attack - df: performance after random attacks for n_repeat_random times
+    '''
+    performance = np.zeros([len(attack_portions), len(attack_types)])
+    
+    performance_random_attack = np.zeros([len(attack_portions), n_repeat_random])
+
+    for i in np.arange(len(attack_portions)):    
+        for j in np.arange(len(attack_types)):
+            if attack_types[j] == 'randomness':               
+                # repeat 20 times to obtain the average performance
+                for k in np.arange(n_repeat_random):
+                    # print(k, "-th repetition for random attack")
+                    s.initial_failure(attack_types[j], attack_portions[i])
+                    s.cascading_failure(redun_rate)
+                    performance_final_temp = s.performance[-1]
+                    performance_random_attack[i,k] = performance_final_temp
+                performance[i,j] = np.mean(performance_random_attack[i,:])              
+            else:    
+                s.initial_failure(attack_types[j], attack_portions[i])
+                s.cascading_failure(redun_rate)
+                performance_final_temp = s.performance[-1]
+                performance[i,j] = performance_final_temp
+    
+    # convert array into pandas df
+    performance_df = pd.DataFrame(data=performance,
+                                  index=attack_portions.tolist(), columns=attack_types)
+    performance_random_attack_df = pd.DataFrame(data=performance_random_attack,
+                                                index=attack_portions.tolist(),
+                                                columns=np.arange(n_repeat_random).tolist())
+    
+    print('Cascading failure finished.')
+    print('Redundancy rate is: ', redun_rate)
+    
+    return performance_df, performance_random_attack_df
+
+    
+# set default plot parameters
+def set_default_plot_param():
+    
+    plt.style.use('classic')
+    
+    plt.rcParams["font.family"] = "Helvetica"
+    plt.rcParams['font.weight']= 'normal'
+    plt.rcParams['figure.figsize'] = [6, 6*3/4]
+   
+    plt.rcParams['figure.facecolor'] = 'white'
+    plt.rcParams['axes.facecolor'] = 'white'
+    
+    plt.rc('axes', titlesize=16, labelsize=15, linewidth=0.75)    # fontsize of the axes title, the x and y labels
+    
+    plt.rc('lines', linewidth=1.75, markersize=4)
+    
+    plt.rc('xtick', labelsize=12)
+    plt.rc('ytick', labelsize=12)
+
+    plt.rcParams['axes.formatter.useoffset'] = False # turn off offset
+    # To turn off scientific notation, use: ax.ticklabel_format(style='plain') or
+    # plt.ticklabel_format(style='plain')
+
+    
+    plt.rcParams['legend.fontsize'] = 12
+    plt.rcParams["legend.fancybox"] = True
+    plt.rcParams["legend.loc"] = "best"
+    plt.rcParams["legend.framealpha"] = 0.5
+    
+    plt.rcParams['savefig.bbox'] = 'tight'
+    plt.rcParams['savefig.dpi'] = 800
+    
+#    plt.rc('text', usetex=False)
+    
+set_default_plot_param()
+
+def plot_performance_different_attack(df, is_save=0):
+# plot the performance of different attack types under different attack portions
+    # attach both nodes and links? But links do not have a degree.
+    plt.figure(figsize=(4, 3))
+    df.plot()
+    
+    plt.xlabel('Attack type')
+    plt.ylabel('Performance of networks')
+    
+    plt.grid(axis='both')
+    
+    
+    legend_labels = ('Random (average)', 'Degree-based', 'Betweenness-based', 'Katz-based', 'Closeness-based')
+    plt.legend(legend_labels)
+    
+    if is_save==1:
+        plt.savefig('compare_attack_types.pdf')
+    plt.show()
+
+
 power = network(dt.p_nodedata, dt.p_edgedata) #initialize the power network
 gas = network(dt.g_nodedata, dt.g_edgedata) #initialize the gas network
 s = system(power, gas, dt.g2p_edgedata)
-s.initial_failure('bc', 0.3) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
-s.cascading_failure(0.5)
+#s.initial_failure('randomness', 0.3) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
+#s.cascading_failure(0.5)
+attack_portions=np.round(np.arange(0.05,0.75,0.05),2)
+performance_df, performance_random_attack_df = compare_attack_types(attack_portions=attack_portions,
+                                                                    redun_rate = 0.2, n_repeat_random=50)
+plot_performance_different_attack(df=performance_df, is_save=1)
 
-
-
+#%%
