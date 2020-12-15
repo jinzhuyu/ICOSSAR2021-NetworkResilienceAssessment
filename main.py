@@ -379,7 +379,7 @@ def plot_performance_different_attack(df, is_save=0):
     plt.figure(figsize=(4, 3))
     df.plot()
     
-    plt.xlabel('Attack type')
+    plt.xlabel('Percentage of damaged nodes')
     plt.ylabel('Performance of networks')
     
     plt.grid(axis='both')
@@ -400,7 +400,7 @@ s = system(power, gas, dt.g2p_edgedata)
 #s.cascading_failure(0.5)
 attack_portions=np.round(np.arange(0.05,0.75,0.05),2)
 performance_df, performance_random_attack_df = compare_attack_types(attack_portions=attack_portions,
-                                                                    redun_rate = 0.2, n_repeat_random=50)
+                                                                    redun_rate=0.2, n_repeat_random=50)
 plot_performance_different_attack(df=performance_df, is_save=1)
 
 #%%
