@@ -18,12 +18,10 @@ import networkx as nx
 
 import os
 dir_path = os.path.dirname(os.path.realpath(__file__))    # go to the directory of the current script
-os.chdir('C:/Users/yuj5/Documents/GitHub/ICOSSAR2021')
 
 import data as dt
 from infrasnetwork import network
-import failsimulation as fs
-
+#import failsimulation as fs
 
 
 class system(object):
@@ -371,15 +369,13 @@ def set_default_plot_param():
     
 #    plt.rc('text', usetex=False)
     
-set_default_plot_param()
-
 def plot_performance_different_attack(df, is_save=0):
 # plot the performance of different attack types under different attack portions
     # attach both nodes and links? But links do not have a degree.
     plt.figure(figsize=(4, 3))
     df.plot()
     
-    plt.xlabel('Percentage of damaged nodes')
+    plt.xlabel('Percentage of attacked nodes')
     plt.ylabel('Performance of networks')
     
     plt.grid(axis='both')
@@ -392,15 +388,23 @@ def plot_performance_different_attack(df, is_save=0):
         plt.savefig('compare_attack_types.pdf')
     plt.show()
 
+# change directory
+os.chdir('C:/Users/yuj5/Documents/GitHub/ICOSSAR2021')
 
+# create network 
 power = network(dt.p_nodedata, dt.p_edgedata) #initialize the power network
 gas = network(dt.g_nodedata, dt.g_edgedata) #initialize the gas network
 s = system(power, gas, dt.g2p_edgedata)
+
+# simulate failure
 #s.initial_failure('randomness', 0.3) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
 #s.cascading_failure(0.5)
-attack_portions = np.round(np.arange(0.05,0.75,0.05),2)
+attack_portions = np.round(np.arange(0,0.75,0.05), 2)
 performance_df, performance_random_attack_df = compare_attack_types(attack_portions=attack_portions,
-                                                                    redun_rate=0.2, n_repeat_random=50)
-plot_performance_different_attack(df=performance_df, is_save=1)
+                                                                    redun_rate=0.2, n_repeat_random=20)
+
+# plot
+set_default_plot_param()
+plot_performance_different_attack(df=performance_df, is_save=0)
 
 #%%
