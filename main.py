@@ -137,11 +137,16 @@ class system(object):
         if(Type == 'randomness'):
             self.initial_fail_seq = random.sample(range(self.nodenum), fail_num)
         else:
-            exec('self.initial_fail_seq = np.argsort(self.{})[-fail_num:]'.format(Type))
+            if fail_num==0:
+                self.initial_fail_seq = []
+            else:
+                exec('self.initial_fail_seq = np.argsort(self.{})[-fail_num:]'.format(Type))  # sort in an ascending approach
         
         if(self.initial_fail_seq != []):
             self.initial_fail_seq_onehotcode[np.array(self.initial_fail_seq)] = 1
         self.initial_fail_link_onehotcode = np.zeros(self.edgenum, dtype = int) #There are no initial failed links
+        
+        return self.initial_fail_seq
         
     def update_matrix_node_fail(self, adjmatrix, node_fail_seq):
         """ Update the adjacency matrix caused by node failure
@@ -312,12 +317,19 @@ def compare_attack_types(s=s, attack_types = ['randomness', 'dc', 'bc', 'kc', 'c
                 for k in np.arange(n_repeat_random):
                     # print(k, "-th repetition for random attack")
                     s.initial_failure(attack_types[j], attack_portions[i])
+
                     s.cascading_failure(redun_rate)
                     performance_final_temp = s.performance[-1]
                     performance_random_attack[i,k] = performance_final_temp
                 performance[i,j] = np.mean(performance_random_attack[i,:])              
             else:    
-                s.initial_failure(attack_types[j], attack_portions[i])
+                initial_fail_seq_temp = s.initial_failure(attack_types[j], attack_portions[i])
+                if attack_portions[i]<=0.05:
+                    print('Attack type: ', attack_types[j])
+                    print('Attack portion: ', attack_portions[i])
+                    print('Initial failure sequence: ', initial_fail_seq_temp)
+                    
+                    
                 s.cascading_failure(redun_rate)
                 performance_final_temp = s.performance[-1]
                 performance[i,j] = performance_final_temp
@@ -401,10 +413,10 @@ s = system(power, gas, dt.g2p_edgedata)
 #s.cascading_failure(0.5)
 attack_portions = np.round(np.arange(0,0.75,0.05), 2)
 performance_df, performance_random_attack_df = compare_attack_types(attack_portions=attack_portions,
-                                                                    redun_rate=0.2, n_repeat_random=20)
+                                                                    redun_rate=0.2, n_repeat_random=50)
 
 # plot
 set_default_plot_param()
-plot_performance_different_attack(df=performance_df, is_save=0)
+plot_performance_different_attack(df=performance_df, is_save=1)
 
 #%%
