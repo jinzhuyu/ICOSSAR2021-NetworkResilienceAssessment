@@ -11,9 +11,12 @@ import random
 
 import pandas as pd
 import matplotlib.pyplot as plt
+from sharefunction import set_default_plot_param
+set_default_plot_param()
 
 import copy
 import networkx as nx
+import pygraphviz
 
 
 import os
@@ -136,12 +139,10 @@ class system(object):
         
         if(Type == 'randomness'):
             self.initial_fail_seq = random.sample(range(self.nodenum), fail_num)
-        else:
-            if fail_num==0:
-                self.initial_fail_seq = []
-            else:
-                exec('self.initial_fail_seq = np.argsort(self.{})[-fail_num:]'.format(Type))  # sort in an ascending approach
-        
+        else:  # case fail_num > self.nodenum needs not be handled because [-fail_num:]= ['all elements']
+            # sort in descending order (negate the original) and return the indice of the top fail_num nodes
+            exec('self.initial_fail_seq = np.argsort(-np.array(self.{}))[:fail_num]'.format(Type))  # sort in an ascending approach
+    
         if(self.initial_fail_seq != []):
             self.initial_fail_seq_onehotcode[np.array(self.initial_fail_seq)] = 1
         self.initial_fail_link_onehotcode = np.zeros(self.edgenum, dtype = int) #There are no initial failed links
@@ -235,24 +236,24 @@ class system(object):
                 
                 flowmatrix[node, :] = flowout
                 
-                node_seq_track = np.zeros(self.nodenum, dtype = int) #1 - failure, 0 - survive at current time step
-                link_seq_track = np.zeros(self.edgenum, dtype = int) #1 - failure, 0 - survive at current time step
-                
-                for i in range(self.edgenum):
-                    node1, node2 = self.edgelist[i, 0], self.edgelist[i, 1] 
-                    if(np.abs(flowmatrix[node1, node2]) > (1 + alpha)*self.flowcapmatrix[node1, node2]):
-                        # print(node1, node2, flowmatrix[node1, node2], self.flowcapmatrix[node1, node2])
-                        link_seq_track[i] = 1
+            node_seq_track = np.zeros(self.nodenum, dtype = int) #1 - failure, 0 - survive at current time step
+            link_seq_track = np.zeros(self.edgenum, dtype = int) #1 - failure, 0 - survive at current time step
             
-                #node failure caused by flow overload 
-                for i in range(self.nodenum):
-                    # print(i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
-                    if((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + alpha)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
-                        # print(time, 'node', i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
-                        node_seq_track[i] = 1
-                
-                self.node_fail_evol_track.append(node_seq_track)
-                self.link_fail_evol_track.append(link_seq_track)
+            for i in range(self.edgenum):
+                node1, node2 = self.edgelist[i, 0], self.edgelist[i, 1] 
+                if(np.abs(flowmatrix[node1, node2]) > (1 + alpha)*self.flowcapmatrix[node1, node2]):
+                    # print(node1, node2, flowmatrix[node1, node2], self.flowcapmatrix[node1, node2])
+                    link_seq_track[i] = 1
+        
+            #node failure caused by flow overload 
+            for i in range(self.nodenum):
+                # print(i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
+                if((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + alpha)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
+                    # print(time, 'node', i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
+                    node_seq_track[i] = 1
+            
+            self.node_fail_evol_track.append(node_seq_track)
+            self.link_fail_evol_track.append(link_seq_track)
             time += 1
                 
             self.satisfy_node_evol.append(satisfynode)
@@ -289,98 +290,67 @@ class system(object):
             #Check the stability: no newly failed nodes and links
             if(np.sum(link_seq) == 0 and np.sum(node_seq) == 0):
                 break
-
+            
+            
+    # plot graph
+    def plot_inter_networks(self, node_list, link_df, is_save=0):
+        
+        G = pygraphviz.AGraph(strict=False, directed=True)
+        
+        G.add_nodes_from(node_list)
+    
+        for i in np.arange(len(link_df)):    
+            G.add_edge(link_df[i,0], link_df[i,1], label=link_df[i,3])
+    
+        G.layout()
+        if is_save==1:
+            G.draw('inter_networks.pdf')
+        else:
+            G.draw()
 
 #%%
 def compare_attack_types(s=s, attack_types = ['randomness', 'dc', 'bc', 'kc', 'cc'],
-                         attack_portions=np.round(np.arange(0.1,0.55,0.05),2),
-                         redun_rate = 0.2, n_repeat_random=20):
+                         attack_portions=np.round(np.arange(0,1.001,0.05),2),
+                         redun_rate = 0.2, n_repeat_random=50):
     '''
     obtain network performance given different failure types and failure rate
     
     inputs:
-        s - a object representing the power-gas systems?
+        s - an instance of system representing the power-gas systems
         n_repeat_random - int: number of repetition for random attacks to obtain the average performance
     
     returns:
         performance_df - df: performance after all types of attacks over 
         performance_random_attack - df: performance after random attacks for n_repeat_random times
     '''
-    performance = np.zeros([len(attack_portions), len(attack_types)])
+    performance = np.zeros([len(attack_portions), len(attack_types), n_repeat_random])
+    performance_mean = np.zeros([len(attack_portions), len(attack_types)])
     
-    performance_random_attack = np.zeros([len(attack_portions), n_repeat_random])
-
     for i in np.arange(len(attack_portions)):    
-        for j in np.arange(len(attack_types)):
-            if attack_types[j] == 'randomness':               
-                # repeat 20 times to obtain the average performance
-                for k in np.arange(n_repeat_random):
-                    # print(k, "-th repetition for random attack")
-                    s.initial_failure(attack_types[j], attack_portions[i])
-
-                    s.cascading_failure(redun_rate)
-                    performance_final_temp = s.performance[-1]
-                    performance_random_attack[i,k] = performance_final_temp
-                performance[i,j] = np.mean(performance_random_attack[i,:])              
-            else:    
-                initial_fail_seq_temp = s.initial_failure(attack_types[j], attack_portions[i])
-                if attack_portions[i]<=0.05:
-                    print('Attack type: ', attack_types[j])
-                    print('Attack portion: ', attack_portions[i])
-                    print('Initial failure sequence: ', initial_fail_seq_temp)
-                    
-                    
+        for j in np.arange(len(attack_types)):           
+            # repeat 50 times to obtain the average performance
+            for k in np.arange(n_repeat_random):
+                # print(k, "-th repetition for random attack")
+                s.initial_failure(attack_types[j], attack_portions[i])
                 s.cascading_failure(redun_rate)
                 performance_final_temp = s.performance[-1]
-                performance[i,j] = performance_final_temp
+                performance[i,j,k] = performance_final_temp
+            performance_mean[i,j] = np.mean(performance[i,j,:])              
+#                if attack_portions[i]>=0.05:
+#                    print('Attack type: ', attack_types[j])
+#                    print('Attack portion: ', attack_portions[i])
+#                    print('Initial failure sequence: ', initial_fail_seq_temp)
+#                    print('Number of nodes failed: ', len(initial_fail_seq_temp))                                 
+
     
     # convert array into pandas df
-    performance_df = pd.DataFrame(data=performance,
-                                  index=attack_portions.tolist(), columns=attack_types)
-    performance_random_attack_df = pd.DataFrame(data=performance_random_attack,
-                                                index=attack_portions.tolist(),
-                                                columns=np.arange(n_repeat_random).tolist())
-    
+    performance_mean_df = pd.DataFrame(data=performance_mean, index=attack_portions.tolist(), columns=attack_types)
     print('Cascading failure finished.')
     print('Redundancy rate is: ', redun_rate)
     
-    return performance_df, performance_random_attack_df
-
+    return performance_mean_df
     
-# set default plot parameters
-def set_default_plot_param():
-    
-    plt.style.use('classic')
-    
-    plt.rcParams["font.family"] = "Helvetica"
-    plt.rcParams['font.weight']= 'normal'
-    plt.rcParams['figure.figsize'] = [6, 6*3/4]
    
-    plt.rcParams['figure.facecolor'] = 'white'
-    plt.rcParams['axes.facecolor'] = 'white'
-    
-    plt.rc('axes', titlesize=16, labelsize=15, linewidth=0.75)    # fontsize of the axes title, the x and y labels
-    
-    plt.rc('lines', linewidth=1.75, markersize=4)
-    
-    plt.rc('xtick', labelsize=12)
-    plt.rc('ytick', labelsize=12)
-
-    plt.rcParams['axes.formatter.useoffset'] = False # turn off offset
-    # To turn off scientific notation, use: ax.ticklabel_format(style='plain') or
-    # plt.ticklabel_format(style='plain')
-
-    
-    plt.rcParams['legend.fontsize'] = 12
-    plt.rcParams["legend.fancybox"] = True
-    plt.rcParams["legend.loc"] = "best"
-    plt.rcParams["legend.framealpha"] = 0.5
-    
-    plt.rcParams['savefig.bbox'] = 'tight'
-    plt.rcParams['savefig.dpi'] = 800
-    
-#    plt.rc('text', usetex=False)
-    
 def plot_performance_different_attack(df, is_save=0):
 # plot the performance of different attack types under different attack portions
     # attach both nodes and links? But links do not have a degree.
@@ -411,12 +381,48 @@ s = system(power, gas, dt.g2p_edgedata)
 # simulate failure
 #s.initial_failure('randomness', 0.3) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
 #s.cascading_failure(0.5)
-attack_portions = np.round(np.arange(0,0.75,0.05), 2)
-performance_df, performance_random_attack_df = compare_attack_types(attack_portions=attack_portions,
-                                                                    redun_rate=0.2, n_repeat_random=50)
+attack_portions = np.round(np.arange(0,1.02,0.05), 2)
+performance_mean_df = compare_attack_types(attack_portions=attack_portions, redun_rate=0.2, n_repeat_random=100)
 
 # plot
-set_default_plot_param()
-plot_performance_different_attack(df=performance_df, is_save=1)
+plot_performance_different_attack(df=performance_mean_df, is_save=0)
 
 #%%
+#from itertools import product
+from mip import Model, xsum, BINARY
+
+def optimize_restore():
+
+    '''optimize the restoration of damaged components
+    input:
+        nodes_damaged - list:
+        arcs damaged - dictionary: xxx
+        
+    output:
+        resil_over_time
+        components to restore at each time step, i.e. the optimal schedule
+    '''
+    # x[i,t] - binary: whether or not to restore a node at time t, 0 otherwise.
+    # y[k,t] - binary: whether or not to restore a link at time t, 0 otherwise.
+    
+    # initiate model
+    model = Model()
+    
+    # decision variable
+    T = len() + len()
+    x = [[model.add_var(name="x({},{})".format(j, t), var_type=BINARY) for t in T] for j in J]
+    
+    # obejctive function
+    model.objective = xsum(t * x[n + 1][t] for t in T)
+    
+       
+    
+#%%    
+
+    
+    
+    
+    
+    
+    
+    
