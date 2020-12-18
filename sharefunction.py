@@ -21,8 +21,8 @@ def set_default_plot_param():
     
     plt.rc('lines', linewidth=1.9, markersize=6)
     
-    plt.rc('xtick', labelsize=12)
-    plt.rc('ytick', labelsize=12)
+    plt.rc('xtick', labelsize=13)
+    plt.rc('ytick', labelsize=13)
 
     plt.rcParams['axes.formatter.useoffset'] = False # turn off offset
     # To turn off scientific notation, use: ax.ticklabel_format(style='plain') or

@@ -412,62 +412,66 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
     
     # 2.0 add decision variable
     # 2.1 schedule of repairing components
-    time_list = sum(y_arc_init) + sum(y_node_init)
-    x_node = [[model.add_var(name="x({},{})".format(i, t), var_type=BINARY) for t in time_list] for i in node_list]
-    x_arc = [[model.add_var(name="x({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in node_list]
+    num_node = len(node_list)
+    num_arc = len(arc_list)
+    time_list = list(range(sum(y_arc_init==0) + sum(y_node_init==0)))
+    x_node = [[model.add_var(name="x({},{})".format(i, t), var_type=BINARY) for t in time_list] for i in np.arange(num_node)]
+    x_arc = [[model.add_var(name="x({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in np.arange(num_arc)]
     
     # 2.2 functional state of nodes and arcs
-    y_node = [[model.add_var(name="y({},{})".format(i, t), var_type=BINARY) for t in time_list] for i in node_list]
-    y_arc = [[model.add_var(name="y({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in arc_list]
+    y_node = [[model.add_var(name="y({},{})".format(i, t), var_type=BINARY) for t in time_list] for i in np.arange(num_node)]
+    y_arc = [[model.add_var(name="y({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in np.arange(num_arc)]
     
     # 2.3 flow, supply, demand, and slack
-    flow = [[model.add_var(name="flow({},{})".format(k, t), lb=0) for t in time_list] for k in arc_list]   
-    supply = [[model.add_var(name="supply({},{})".format(i, t), lb=0) for t in time_list] for i in node_list] 
-    slack = [[model.add_var(name="slack({},{})".format(i, t), lb=0) for t in time_list] for i in node_list] 
+    flow = [[model.add_var(name="flow({},{})".format(k, t), lb=0) for t in time_list] for k in np.arange(num_arc)]   
+    supply = [[model.add_var(name="supply({},{})".format(i, t), lb=0) for t in time_list] for i in np.arange(num_node)] 
+    slack = [[model.add_var(name="slack({},{})".format(i, t), lb=0) for t in time_list] for i in np.arange(num_node)] 
      
     # 3.0 obejctive function
-    model.objective = minimize(xsum((1- s[i][t]/demand[i]) for i in node_list for t in time_list))
+    model.objective = minimize(xsum(xsum((1- slack[i][t]/demand[i]) for i in np.arange(num_node)) for t in time_list))
     
     # 4.0 add constraints
     # 4.1 component is restored at one time step
         # These two sets of constraints might be unnecessary.
-    for i in node_list:
+    for i in np.arange(num_node):
         model.add_constr(xsum(x_node[i][t] for t in time_list) == 1)
-    for k in arc_list:
+    for k in np.arange(num_arc):
         model.add_constr(xsum(x_arc[k][t] for t in time_list) == 1)
 
     # 4.2 restore 2 components at a time period
     for t in time_list:
-        model.add_constr(xsum(x_node[i][t] for i in node_list)+ xsum(x_arc[k][t] for k in arc_list) == 2)
+        model.add_constr(xsum(x_node[i][t] for i in np.arange(num_node))+ xsum(x_arc[k][t] for k in np.arange(num_arc)) == 2)
 
     # 4.3 flow conservation: outflow - inflow = supply + slack - demand
-    for i in node_list:
+    for i in np.arange(num_node):
         for t in time_list:
-            model.add_constr(xsum(f[k][t] for k in arc_list if i==k[0]) - xsum(f[k][t] for k in arc_list if i==k[1]) ==
+            model.add_constr(xsum(flow[k][t] for k in np.arange(num_arc) if i==arc_list[k][0]) - xsum(flow[k][t] for k in np.arange(num_arc) if i==arc_list[k][1]) ==
                              supply[i][t] + slack[i][t] - demand[i])
     
     # 4.4 ub of flow, supply, and slack
-    for k in arc_list:
-        model.add_constr(flow[k][t] <= y_arc[k][t]*flow_cap[k])
-    for i in node_list:
-        model.add_constr(slack[i][t] <= y_node[i][t]*demand[i])
-        model.add_constr(supply[i][t] <= y_node[i][t]*supply_cap[i])
+    for t in time_list:
+        for k in np.arange(num_arc):
+            model.add_constr(flow[k][t] <= y_arc[k][t]*flow_cap[k])
+        for i in np.arange(num_node):
+#            if demand[i]>0
+            model.add_constr(slack[i][t] <= y_node[i][t]*demand[i])
+            model.add_constr(supply[i][t] <= y_node[i][t]*supply_cap[i])
         
     # 4.5 start node of an arc should be restored before the arc
         # this might not be necessary
-    for k in arc_list:
-        for i in node_list:
+    for k in np.arange(num_arc):
+        for i in np.arange(num_node):
             if i==k[0]:
                 model.add_constr(x_arc[k][t] <= x_node[i][t])
     
     # 4.6 components will be functional once repaired
-    for i in node_list:
+    for i in np.arange(num_node):
         model.add_constr(y_node[i][t] <= y_node[i][t-1] + x_node[i][t-1])
-    for k in arc_list:
+    for k in np.arange(num_arc):
         model.add_constr(y_arc[k][t] <= y_arc[k][t-1] + x_arc[i][t-1])
         
     # 4.7 non-deteriorating state of components
-    for i in node_list:
+    for i in np.arange(num_node):
         model.add_constr(y_node[i][t-1] <= y_node[i][t])
     for i in arc_list:
         model.add_constr(y_arc[k][t-1] <= y_arc[k][t])
@@ -484,7 +488,40 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
     # number of variables and constraints
     print('model has {} vars, {} constraints and {} nzs'.format(model.num_cols, model.num_rows, model.num_nz))
     
-#%%    
+#%% test optimization model
+def get_arc_list(start_node, end_node):
+    '''get arc list from lists of start node and end node
+    
+    returns:
+        list of tuple elements, e.g. (start node, end node)
+    '''
+    arc_list = []
+    for i in np.arange(len(start_node)):
+        arc_list.append((start_node[i],end_node[i]))
+        
+    return arc_list
+
+# 1.0 import data    
+node_data = pd.read_csv('./data/case_9_node/node_data.csv')
+arc_data = pd.read_csv('./data/case_9_node/arc_data.csv')
+
+# 2.0 extract data
+# 2.1 node
+demand, supply_cap = node_data.demand, node_data.supply_cap
+node_list = node_data.node_id
+
+# 2.2 arc
+# 2.2.1 get list of arcs
+start_node = arc_data.start_node
+end_node = arc_data.end_node
+arc_list = get_arc_list(start_node, end_node)
+
+# 2.2.2 flow
+flow_cap = arc_data.flow_cap
+
+# 2.3 initial state of nodes and arcs
+y_node_init, y_arc_init = node_data.y_node_init, arc_data.y_arc_init
+  
 
     
     
