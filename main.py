@@ -355,7 +355,9 @@ def plot_performance_different_attack(df, is_save=0):
 # plot the performance of different attack types under different attack portions
     # attach both nodes and links? But links do not have a degree.
     plt.figure(figsize=(4, 3))
-    df.plot()
+    
+    styles = ['k-','b--','r-.X','c--o','m--s']
+    df.plot(style=styles)
     
     plt.xlabel('Percentage of attacked nodes')
     plt.ylabel('Performance of networks')
@@ -363,7 +365,7 @@ def plot_performance_different_attack(df, is_save=0):
     plt.grid(axis='both')
     
     
-    legend_labels = ('Random (average)', 'Degree-based', 'Betweenness-based', 'Katz-based', 'Closeness-based')
+    legend_labels = ('Random', 'Degree-based', 'Betweenness-based', 'Katz-based', 'Closeness-based')
     plt.legend(legend_labels)
     
     if is_save==1:
@@ -385,13 +387,13 @@ attack_portions = np.round(np.arange(0,1.02,0.05), 2)
 performance_mean_df = compare_attack_types(attack_portions=attack_portions, redun_rate=0.2, n_repeat_random=100)
 
 # plot
-plot_performance_different_attack(df=performance_mean_df, is_save=0)
+plot_performance_different_attack(df=performance_mean_df, is_save=1)
 
 #%%
 #from itertools import product
-from mip import Model, xsum, BINARY
+from mip import Model, minimize, xsum, BINARY, OptimizationStatus
 
-def optimize_restore():
+def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
 
     '''optimize the restoration of damaged components
     input:
@@ -405,17 +407,82 @@ def optimize_restore():
     # x[i,t] - binary: whether or not to restore a node at time t, 0 otherwise.
     # y[k,t] - binary: whether or not to restore a link at time t, 0 otherwise.
     
-    # initiate model
+    # 1. initiate model
     model = Model()
     
-    # decision variable
-    T = len() + len()
-    x = [[model.add_var(name="x({},{})".format(j, t), var_type=BINARY) for t in T] for j in J]
+    # 2.0 add decision variable
+    # 2.1 schedule of repairing components
+    time_list = sum(y_arc_init) + sum(y_node_init)
+    x_node = [[model.add_var(name="x({},{})".format(i, t), var_type=BINARY) for t in time_list] for i in node_list]
+    x_arc = [[model.add_var(name="x({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in node_list]
     
-    # obejctive function
-    model.objective = xsum(t * x[n + 1][t] for t in T)
+    # 2.2 functional state of nodes and arcs
+    y_node = [[model.add_var(name="y({},{})".format(i, t), var_type=BINARY) for t in time_list] for i in node_list]
+    y_arc = [[model.add_var(name="y({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in arc_list]
     
-       
+    # 2.3 flow, supply, demand, and slack
+    flow = [[model.add_var(name="flow({},{})".format(k, t), lb=0) for t in time_list] for k in arc_list]   
+    supply = [[model.add_var(name="supply({},{})".format(i, t), lb=0) for t in time_list] for i in node_list] 
+    slack = [[model.add_var(name="slack({},{})".format(i, t), lb=0) for t in time_list] for i in node_list] 
+     
+    # 3.0 obejctive function
+    model.objective = minimize(xsum((1- s[i][t]/demand[i]) for i in node_list for t in time_list))
+    
+    # 4.0 add constraints
+    # 4.1 component is restored at one time step
+        # These two sets of constraints might be unnecessary.
+    for i in node_list:
+        model.add_constr(xsum(x_node[i][t] for t in time_list) == 1)
+    for k in arc_list:
+        model.add_constr(xsum(x_arc[k][t] for t in time_list) == 1)
+
+    # 4.2 restore 2 components at a time period
+    for t in time_list:
+        model.add_constr(xsum(x_node[i][t] for i in node_list)+ xsum(x_arc[k][t] for k in arc_list) == 2)
+
+    # 4.3 flow conservation: outflow - inflow = supply + slack - demand
+    for i in node_list:
+        for t in time_list:
+            model.add_constr(xsum(f[k][t] for k in arc_list if i==k[0]) - xsum(f[k][t] for k in arc_list if i==k[1]) ==
+                             supply[i][t] + slack[i][t] - demand[i])
+    
+    # 4.4 ub of flow, supply, and slack
+    for k in arc_list:
+        model.add_constr(flow[k][t] <= y_arc[k][t]*flow_cap[k])
+    for i in node_list:
+        model.add_constr(slack[i][t] <= y_node[i][t]*demand[i])
+        model.add_constr(supply[i][t] <= y_node[i][t]*supply_cap[i])
+        
+    # 4.5 start node of an arc should be restored before the arc
+        # this might not be necessary
+    for k in arc_list:
+        for i in node_list:
+            if i==k[0]:
+                model.add_constr(x_arc[k][t] <= x_node[i][t])
+    
+    # 4.6 components will be functional once repaired
+    for i in node_list:
+        model.add_constr(y_node[i][t] <= y_node[i][t-1] + x_node[i][t-1])
+    for k in arc_list:
+        model.add_constr(y_arc[k][t] <= y_arc[k][t-1] + x_arc[i][t-1])
+        
+    # 4.7 non-deteriorating state of components
+    for i in node_list:
+        model.add_constr(y_node[i][t-1] <= y_node[i][t])
+    for i in arc_list:
+        model.add_constr(y_arc[k][t-1] <= y_arc[k][t])
+        
+    # 5.0 solve the model and check status
+    model.max_gap = 0.01
+    status = model.optimize(max_seconds=60*10)
+    
+    if status == OptimizationStatus.OPTIMAL:
+        print('optimal solution cost {} found'.format(m.objective_value))
+    
+    # 6.0 query optimization results
+    
+    # number of variables and constraints
+    print('model has {} vars, {} constraints and {} nzs'.format(model.num_cols, model.num_rows, model.num_nz))
     
 #%%    
 
