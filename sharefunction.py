@@ -6,7 +6,9 @@ Created on Sat Dec 12 17:43:40 2020
 """
 
 # set default plot parameters
-def set_default_plot_param():
+def set_default_plot_param(plt):
+	# %matplotlib inline
+	# from matplotlib import pyplot as plt
     
     plt.style.use('classic')
     
@@ -16,10 +18,10 @@ def set_default_plot_param():
    
     plt.rcParams['figure.facecolor'] = 'white'
     plt.rcParams['axes.facecolor'] = 'white'
-    
+
     plt.rc('axes', titlesize=16, labelsize=15, linewidth=0.9)    # fontsize of the axes title, the x and y labels
     
-    plt.rc('lines', linewidth=1.9, markersize=6)
+    plt.rc('lines', linewidth=1.9, markersize=6, markeredgecolor='none')
     
     plt.rc('xtick', labelsize=13)
     plt.rc('ytick', labelsize=13)
