@@ -312,7 +312,7 @@ class system(object):
             G.draw()
 
 #%%
-def compare_attack_types(s=s, attack_types = ['randomness', 'dc', 'bc', 'kc', 'cc'],
+def compare_attack_types(s, attack_types = ['randomness', 'dc', 'bc', 'kc', 'cc'],
                          attack_portions=np.round(np.arange(0,1.001,0.05),2),
                          redun_rate = 0.2, n_repeat_random=50):
     '''
@@ -359,7 +359,7 @@ def plot_performance_different_attack(df, is_save=0):
     # attach both nodes and links? But links do not have a degree.
     plt.figure(figsize=(4, 3))
     
-    styles = ['k-','b--','r-.X','c--o','m--s']
+    styles = ['k-','b--','r-.X','c--o','m--s'][:df.shape[1]]
     df.plot(style=styles)
     
     plt.xlabel('Percentage of attacked nodes')
@@ -368,7 +368,7 @@ def plot_performance_different_attack(df, is_save=0):
     plt.grid(axis='both')
     
     
-    legend_labels = ('Random', 'Degree-based', 'Betweenness-based', 'Katz-based', 'Closeness-based')
+    legend_labels = ('Random', 'Degree-based')  #, 'Betweenness-based', 'Katz-based', 'Closeness-based')
     plt.legend(legend_labels)
     
     if is_save==1:
@@ -387,7 +387,8 @@ s = system(power, gas, dt.g2p_edgedata)
 #s.initial_failure('randomness', 0.3) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
 #s.cascading_failure(0.5)
 attack_portions = np.round(np.arange(0,1.02,0.05), 2)
-performance_mean_df = compare_attack_types(attack_portions=attack_portions, redun_rate=0.2, n_repeat_random=2)
+attack_types = ['randomness', 'dc']
+performance_mean_df = compare_attack_types(s=s, attack_types=attack_types, attack_portions=attack_portions, redun_rate=0.2, n_repeat_random=2)
 
 # plot
 plot_performance_different_attack(df=performance_mean_df, is_save=0)
@@ -422,7 +423,7 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
     # 2.1 schedule of repairing components
     num_node = len(node_list)
     num_arc = len(arc_list)
-    time_list = list(range(y_arc_init.count(0) + y_node_init.count(0)))
+    time_list = list(range(y_arc_init.count(0) + y_node_init.count(0) + 1))
     x_node = [[model.add_var(name="x({},{})".format(i, t), var_type=BINARY) for t in time_list] for i in np.arange(num_node)]
     x_arc = [[model.add_var(name="x({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in np.arange(num_arc)]
     
@@ -461,11 +462,29 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
                              xsum(flow[k][t] for k in np.arange(num_arc) if node_list[i]==arc_list[k][1]) ==
                              supply[i][t] + slack[i][t] - demand[i])
     
-    # 4.4 ub of flow, supply, and slack
+    # 4.4.0 ub of flow, supply, and slack
+    # 4.4.1 add auxillary variables to delinearize the product of binary variables
+    aux_z_arc = [[model.add_var(name="aux_z_arc({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in np.arange(num_arc)] 
     for t in time_list:
         for k in np.arange(num_arc):
-            model.add_constr(flow[k][t] <= y_arc[k][t]*flow_cap[k]) # *y_node[i]*y_node[j]
-        for i in np.arange(num_node):
+            # use auxillary variables to delinearize the product of binary variables
+            start_node_idx = node_list.index(arc_list[k][0])
+            end_node_idx = node_list.index(arc_list[k][1])
+            # aux_z <= each binary variable
+            model.add_constr(aux_z_arc[k][t] <= y_node[start_node_idx][t])
+            model.add_constr(aux_z_arc[k][t] <= y_node[end_node_idx][t])
+            model.add_constr(aux_z_arc[k][t] <= y_arc[k][t])
+            # aux_z >= sum of binary variables - number of binary variables + 1
+            # active when all binary varialbes == 1
+            model.add_constr(aux_z_arc[k][t] >= y_node[start_node_idx][t] + 
+                                                y_node[end_node_idx][t] + 
+                                                y_arc[k][t] - (3-1))
+            
+            # 4.4.2 flow cap
+            # flow will be zeros unless the start, end node nad the arc itsel are all functional
+            model.add_constr(flow[k][t] <= aux_z_arc[k][t]*flow_cap[k])
+            
+            # 4.4.3 slack and supply cap
             model.add_constr(slack[i][t] <= y_node[i][t]*demand[i])
             model.add_constr(supply[i][t] <= y_node[i][t]*supply_cap[i])
         
