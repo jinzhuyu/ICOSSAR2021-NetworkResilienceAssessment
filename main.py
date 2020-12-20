@@ -405,10 +405,19 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
     output:
         resil_over_time
         components to restore at each time step, i.e. the optimal schedule
-        
+
+    notes:
+        devise a minimal working example/as small as possible
+        build up damage scenario to test the program
+            scenario 1: no components are damaged
+            scenario 2: one node or link is damaged
+            scenario 3: all nodes are damaged
+            scenario 4: all components are damaged
+        debugging: bugs could occur due to wrong index or indentation
     refs.: 
         https://www.python-mip.com/
-        https://pysal.org/spaghetti/notebooks/transportation-problem.html   
+        https://pysal.org/spaghetti/notebooks/transportation-problem.html
+        https://jckantor.github.io/ND-Pyomo-Cookbook/04.03-Job-Shop-Scheduling.html
     '''
     # x[i,t] - binary: whether or not to restore a node at time t, 0 otherwise.
     # y[k,t] - binary: whether or not to restore a link at time t, 0 otherwise.
@@ -423,7 +432,11 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
     # 2.1 schedule of repairing components
     num_node = len(node_list)
     num_arc = len(arc_list)
-    time_list = list(range(y_arc_init.count(0) + y_node_init.count(0) + 1))
+    # total restoration time
+    num_restore_max = 1
+    num_damage_comp = y_arc_init.count(0) + y_node_init.count(0)
+    from math import ceil
+    time_list = list(range(ceil(num_damage_comp/num_restore_max) + 1))
     x_node = [[model.add_var(name="x({},{})".format(i, t), var_type=BINARY) for t in time_list] for i in np.arange(num_node)]
     x_arc = [[model.add_var(name="x({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in np.arange(num_arc)]
     
@@ -450,10 +463,10 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
         if y_arc_init[k]==0:
             model.add_constr(xsum(x_arc[k][t] for t in time_list) == 1)
 
-    # 4.2 restore at most 2 components at a time period
+    # 4.2 number of components restored at a time period is capped
     for t in time_list:
         model.add_constr(xsum(x_node[i][t] for i in np.arange(num_node)) +
-                         xsum(x_arc[k][t] for k in np.arange(num_arc)) <= 1)
+                         xsum(x_arc[k][t] for k in np.arange(num_arc)) <= num_restore_max)
 
     # 4.3 flow conservation: outflow - inflow = supply + slack - demand
     for i in np.arange(num_node):
@@ -463,33 +476,35 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
                              supply[i][t] + slack[i][t] - demand[i])
     
     # 4.4.0 ub of flow, supply, and slack
-    # 4.4.1 add auxillary variables to delinearize the product of binary variables
+    # 4.4.1.1 add auxillary variables to delinearize the product of binary variables
     aux_z_arc = [[model.add_var(name="aux_z_arc({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in np.arange(num_arc)] 
     for t in time_list:
         for k in np.arange(num_arc):
             # use auxillary variables to delinearize the product of binary variables
             start_node_idx = node_list.index(arc_list[k][0])
             end_node_idx = node_list.index(arc_list[k][1])
+            n_binary_var = 3
             # aux_z <= each binary variable
             model.add_constr(aux_z_arc[k][t] <= y_node[start_node_idx][t])
             model.add_constr(aux_z_arc[k][t] <= y_node[end_node_idx][t])
             model.add_constr(aux_z_arc[k][t] <= y_arc[k][t])
             # aux_z >= sum of binary variables - number of binary variables + 1
-            # active when all binary varialbes == 1
-            model.add_constr(aux_z_arc[k][t] >= y_node[start_node_idx][t] + 
-                                                y_node[end_node_idx][t] + 
-                                                y_arc[k][t] - (3-1))
+                # active when all binary varialbes == 1
+            model.add_constr(aux_z_arc[k][t] >= y_node[start_node_idx][t] + y_node[end_node_idx][t] + 
+                                                y_arc[k][t] - (n_binary_var-1))
             
-            # 4.4.2 flow cap
+            # 4.4.1.2 flow cap
             # flow will be zeros unless the start, end node nad the arc itsel are all functional
             model.add_constr(flow[k][t] <= aux_z_arc[k][t]*flow_cap[k])
+
             
-            # 4.4.3 slack and supply cap
-            model.add_constr(slack[i][t] <= y_node[i][t]*demand[i])
-            model.add_constr(supply[i][t] <= y_node[i][t]*supply_cap[i])
+        # 4.4.2 slack and supply cap
+        for i in np.arange(num_node):
+                model.add_constr(slack[i][t] <= demand[i])
+                model.add_constr(supply[i][t] <= y_node[i][t]*supply_cap[i])
         
 #    # 4.5 start node of an arc should be restored before the arc
-#        # this might not be necessary
+#        # this constraint is redundant
 #    for k in np.arange(num_arc):
 #        for i in np.arange(num_node):
 #            if i==arc_list[k][0]:
@@ -516,20 +531,14 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
             for k in np.arange(num_arc):
                 model.add_constr(y_arc[k][t] <= y_arc[k][t-1] + x_arc[k][t-1])
         
-        # node link functional state<=start_node functional state
-        for i in np.arange(num_node):
-            for k in np.arange(num_arc):
-                if node_list[i]==arc_list[k][0]:
-                    model.add_constr(y_node[i][t] >= y_arc[k][t])
-        
     # 5.0 solve the model and check status
-    model.max_gap = 0.001
+    model.max_gap = 1e-5
     status = model.optimize(max_seconds=60*5)
     
     # 6.0 query optimization results    
     # 6.1 check solution status
     if status == OptimizationStatus.OPTIMAL:
-        print('optimal solution cost {} found'.format(model.objective_value))
+        print('optimal solution: {}'.format(model.objective_value))
     
         # 6.2 get objective value and x
         obj_value = model.objective_value
@@ -555,7 +564,7 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
         
         # visualize the schedule
         
-        return obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow
+        return obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list
     
     else:
         print('Infeasible or unbounded problem')
@@ -574,7 +583,9 @@ def get_arc_list(start_node, end_node):
 
 
 def convert_solu_list_to_arr(var, time_list):
-    '''convert list of solutions to variables in rip entity format to array
+    '''convert list of solutions to variables in mip entity format to array
+    input:
+        var - mip solution list: e.g. var=y_var, solution to the functional state of arcs
     '''
     var_arr = np.zeros([len(var), len(time_list)])
     for j in np.arange(len(var)):
@@ -586,8 +597,8 @@ def convert_solu_list_to_arr(var, time_list):
 #%% test optimization model
 
 # 1.0 import data    
-node_data = pd.read_csv('./data/case_9_node/node_data.csv')
-arc_data = pd.read_csv('./data/case_9_node/arc_data.csv')
+node_data = pd.read_csv('./data/case_4_node/node_data.csv')
+arc_data = pd.read_csv('./data/case_4_node/arc_data.csv')
 
 # 2.0 extract data
 # 2.1 node
@@ -606,8 +617,11 @@ flow_cap = arc_data.flow_cap.astype(float).tolist()
 # 2.3 initial state of nodes and arcs
 y_node_init, y_arc_init = node_data.y_node_init.astype(float).tolist(), arc_data.y_arc_init.astype(float).tolist()
 
+#y_node_init = [0*item for item in y_node_init]
+#y_arc_init = [0*item for item in y_arc_init]
 # 
-obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow = optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap)
+obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list = \
+     optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap)
 
 # dispaly x and y
 x_arc_arr = convert_solu_list_to_arr(x_arc, time_list)
@@ -623,16 +637,5 @@ supply_arr = convert_solu_list_to_arr(supply, time_list)
 # flow
 flow_arr = convert_solu_list_to_arr(flow, time_list)
 
-
-
-for i in np.arange(num_node):
-    for t in time_list:
-        outflow = sum(flow_arr[k][t] for k in np.arange(num_arc) if node_list[i]==arc_list[k][0])
-        inflow =  sum(flow_arr[k][t] for k in np.arange(num_arc) if node_list[i]==arc_list[k][1])
-        
-        if (outflow - inflow) != supply_arr[i][t] + slack_arr[i][t] - demand[i]:
-            print(outflow, inflow, supply_arr[i][t], slack_arr[i][t], demand[i])
-
-# case two: node 4 is damaged as well. To test if the program works
 
     
