@@ -393,7 +393,7 @@ performance_mean_df = compare_attack_types(s=s, attack_types=attack_types, attac
 # plot
 plot_performance_different_attack(df=performance_mean_df, is_save=0)
 
-#%%
+#%% optimize the repair schedule
 
 def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
 
@@ -501,14 +501,7 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
         for i in np.arange(num_node):
                 model.add_constr(slack[i][t] <= demand[i])
                 model.add_constr(supply[i][t] <= y_node[i][t]*supply_cap[i])
-        
-#    # 4.5 start node of an arc should be restored before the arc
-#        # this constraint is redundant.
-#    for k in np.arange(num_arc):
-#        for i in np.arange(num_node):
-#            if i==arc_list[k][0]:
-#                model.add_constr(x_arc[k][t] <= x_node[i][t])
-    
+            
     # 4.6.0
     for t in time_list:  # start from the second time period
         # 4.6.1 non-deteriorating state of components
@@ -567,6 +560,40 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
     else:
         print('Infeasible or unbounded problem')
 
+    
+#%% test optimization model
+    
+def import_data():
+
+    # 1.0 import data    
+    node_data = pd.read_csv('./data/case_4_node/node_data.csv')
+    arc_data = pd.read_csv('./data/case_4_node/arc_data.csv')
+    
+    # 2.0 extract data
+    # 2.1 node
+    demand, supply_cap = node_data.demand.astype(float).tolist(),\
+                         node_data.supply_cap.tolist() # demand should be float format
+    node_list = node_data.node_id.tolist()
+    
+    # 2.2 arc
+    # 2.2.1 get list of arcs
+    start_node = arc_data.start_node
+    end_node = arc_data.end_node
+    arc_list = get_arc_list(start_node, end_node)
+    
+    # 2.2.2 flow
+    flow_cap = arc_data.flow_cap.astype(float).tolist()
+    
+    # 2.3 initial state of nodes and arcs
+    y_node_init, y_arc_init = node_data.y_node_init.astype(float).tolist(),\
+                              arc_data.y_arc_init.astype(float).tolist()
+
+    return node_list, arc_list, y_node_init, y_arc_init, demand, flow_cap, supply_cap
+
+node_list, arc_list, y_node_init, y_arc_init, demand, flow_cap, supply_cap = import_data()
+
+
+
 def get_arc_list(start_node, end_node):
     '''get arc list from lists of start node and end node
     
@@ -591,102 +618,97 @@ def convert_solu_list_to_arr(var, time_list):
             var_arr[j,t] = var[j][t].x
     
     return var_arr
+
+def get_solution(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
     
-#%% test optimization model
+    # 3.0 solve the model
+    obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list = \
+         optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap)
+    
+    
+    # 4.0 extract results
+    # extract x and y
+    x_node_arr = convert_solu_list_to_arr(x_node, time_list)
+    x_arc_arr = convert_solu_list_to_arr(x_arc, time_list)
+    
+    #y_arc_arr = convert_solu_list_to_arr(y_arc, time_list)
+    #y_node_arr = convert_solu_list_to_arr(y_node, time_list)
+    
+    # extract slack and supply   
+    slack_arr = convert_solu_list_to_arr(slack, time_list)  
+    #supply_arr = convert_solu_list_to_arr(supply, time_list) 
 
-# 1.0 import data    
-node_data = pd.read_csv('./data/case_4_node/node_data.csv')
-arc_data = pd.read_csv('./data/case_4_node/arc_data.csv')
+    return x_node_arr, x_arc_arr, slack_arr, time_list
 
-# 2.0 extract data
-# 2.1 node
-demand, supply_cap = node_data.demand.astype(float).tolist(),\
-                     node_data.supply_cap.tolist() # demand should be float format
-node_list = node_data.node_id.tolist()
-
-# 2.2 arc
-# 2.2.1 get list of arcs
-start_node = arc_data.start_node
-end_node = arc_data.end_node
-arc_list = get_arc_list(start_node, end_node)
-
-# 2.2.2 flow
-flow_cap = arc_data.flow_cap.astype(float).tolist()
-
-# 2.3 initial state of nodes and arcs
-y_node_init, y_arc_init = node_data.y_node_init.astype(float).tolist(),\
-                          arc_data.y_arc_init.astype(float).tolist()
-
-# 3.0 solve the model
-obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list = \
-     optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap)
-
-# 4.0 extract results
-# extract x and y
-x_arc_arr = convert_solu_list_to_arr(x_arc, time_list)
-x_node_arr = convert_solu_list_to_arr(x_node, time_list)
-
-#y_arc_arr = convert_solu_list_to_arr(y_arc, time_list)
-#y_node_arr = convert_solu_list_to_arr(y_node, time_list)
-
-# extract slack and supply   
-slack_arr = convert_solu_list_to_arr(slack, time_list)  
-#supply_arr = convert_solu_list_to_arr(supply, time_list) 
-
-## extract flow
-#flow_arr = convert_solu_list_to_arr(flow, time_list)
+x_node_arr, x_arc_arr, slack_arr, time_list = get_solution(y_node_init, y_arc_init,
+                                                           demand, flow_cap, supply_cap)
 
 # 5.0 visualize results
 # 5.1 schedule
-# store scheduling resulst in a df
-    # df: index: damaged component; columns: start_time, duration, finish time
-# get damaged component id    
-comp_list = node_list + arc_list
-init_state_list = y_node_init + y_arc_init
-damaged_comp_list =  [comp_list[i] for i, item in enumerate(init_state_list) if item==0]
+def get_schedule_df(node_list, arc_list, y_node_init, y_arc_init, x_node_arr, x_arc_arr):
+    # store scheduling resulst in a df
+        # df: index: damaged component; columns: start_time, duration, finish time
+    # get damaged component id    
+    comp_list = node_list + arc_list
+    init_state_list = y_node_init + y_arc_init
+    damaged_comp_list =  [comp_list[i] for i, item in enumerate(init_state_list) if item==0]
+    
+    # get restoration start time point
+    x_comp = np.concatenate((x_node_arr, x_arc_arr), axis=0)
+    # select restoration start time of damaged components
+    x_comp_damage = x_comp[np.amax(x_comp, axis=1)==1]
+    # restore start time of each component
+    restore_start_time = np.argmax(x_comp_damage, axis=1)
+    
+    # create df and sort by restore start time
+    schedule_df = pd.DataFrame({'restore_start_time':restore_start_time}, index = damaged_comp_list)
+    schedule_df = schedule_df.sort_values(by='restore_start_time')
+    schedule_df['duration'] = 1
+    schedule_df['restore_end_time'] = schedule_df['restore_start_time'] + schedule_df['duration']
+    
+    return schedule_df
 
-# get restoration start time point
-x_comp = np.concatenate((x_node_arr, x_arc_arr), axis=0)
-# select restoration start time of damaged components
-x_comp_damage = x_comp[np.amax(x_comp, axis=1)==1]
-# restore start time of each component
-restore_start_time = np.argmax(x_comp_damage, axis=1)
+schedule_df = get_schedule_df(node_list, arc_list, y_node_init, y_arc_init, x_node_arr, x_arc_arr)
 
-# create df and sort by restore start time
-schedule_df = pd.DataFrame({'restore_start_time':restore_start_time}, index = damaged_comp_list)
-schedule_df = schedule_df.sort_values(by='restore_start_time')
-schedule_df['duration'] = 1
-schedule_df['restore_end_time'] = schedule_df['restore_start_time'] + schedule_df['duration']
+# 5.2 plot schedule
+def plot_schedule(schedule_df, is_save=True):
+    # plot the restoreation schedule
+        # refs.: https://towardsdatascience.com/from-the-bridge-to-tasks-planning-build-gannt-chart-in-python-r-and-tableau-7256fb7615f8
+                 # https://plotly.com/python/gantt/
+    # plot parameters
+    max_time = schedule_df['restore_end_time'].max()
+    bar_ht = 0.75
+    off_ht = 0.5
+    
+    fig, ax = plt.subplots(figsize=(1+max_time, schedule_df.shape[0]/2))         
+    for i in np.arange(schedule_df.shape[0]):
+        ax.broken_barh([(schedule_df['restore_start_time'].iloc[i], schedule_df['duration'].iloc[i])],
+                        yrange = (i+off_ht/4, bar_ht),
+                        facecolors = ('tab:red') if isinstance(schedule_df.index[i], int) else ('tab:blue'),
+                        edgecolor = "none") 
+                
+    #ax.set_title('Restoration schedule')
+    ax.set_ylabel('Component')
+    ax.set_xlabel('Time period')
+    ax.set_ylim(bottom=-off_ht/2, top=schedule_df.shape[0]+off_ht/2)
+    ax.set_yticks([i + off_ht for i in np.arange(schedule_df.shape[0])]) 
+    ax.set_yticklabels(schedule_df.index)
+    ax.set_xticks(np.arange(0, max_time+1, 1.0))
+    ax.set_xticklabels(np.arange(1, max_time+2, 1))
+    ax.set_xlim(left=-off_ht/2, right=max_time+off_ht/2)
+    
+    ax.grid(True)
+    
+    colors = {'Node':'tab:red', 'Link':'tab:blue'}         
+    labels = list(colors.keys())
+    handles = [plt.Rectangle((0,0),1,1, color=colors[label]) for label in labels]
+    plt.legend(handles, labels, loc='lower right')
+    
+    if is_save:
+        plt.savefig('repair_schedule.pdf')
+        
+    plt.show()
 
-# plot
-    # refs.: https://towardsdatascience.com/from-the-bridge-to-tasks-planning-build-gannt-chart-in-python-r-and-tableau-7256fb7615f8
-             # https://plotly.com/python/gantt/
-# plot parameters
-max_time = schedule_df['restore_end_time'].max()
-tasks = {task: (i+1)*10 for i, task in enumerate(damaged_comp_list)}
-
-fig, ax = plt.subplots(figsize=(8, 3+max_time/4))         
-for i in np.arange(schedule_df.shape[0]):
-    ax.broken_barh([(schedule_df['restore_start_time'].iloc[i], schedule_df['duration'].iloc[i])],
-                    yrange = (i, 1),
-                    facecolors = ('tab:red') if isinstance(schedule_df.index[i], int) else ('tab:blue')) 
-            
-#ax.set_title('Restoration schedule')
-ax.set_ylabel('Component')
-ax.set_xlabel('Time period')
-ax.set_yticks([i + 0.5 for i in np.arange(schedule_df.shape[0])]) 
-ax.set_yticklabels(schedule_df.index)
-ax.set_xticks(np.arange(0, max_time+1, 1.0))
-ax.set_xticklabels(np.arange(1,max_time+2, 1))
-
-ax.grid(True)
-
-colors = {'Node':'tab:red', 'Link':'tab:blue'}         
-labels = list(colors.keys())
-handles = [plt.Rectangle((0,0),1,1, color=colors[label]) for label in labels]
-plt.legend(handles, labels, loc='lower right')
-
-plt.savefig('schedule.pdf')
-plt.show()
+plot_schedule(schedule_df, is_save=True)
 
 # 5.2 restoration rate over time    
