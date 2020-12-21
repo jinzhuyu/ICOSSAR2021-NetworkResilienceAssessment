@@ -413,11 +413,10 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
             scenario 2: one node or link is damaged
             scenario 3: all nodes are damaged
             scenario 4: all components are damaged
-        debugging: bugs could occur due to wrong index or indentation
+        debugging: make sure the codes mathes the model; bugs could occur due to wrong index or indentation
     refs.: 
         https://www.python-mip.com/
         https://pysal.org/spaghetti/notebooks/transportation-problem.html
-        https://jckantor.github.io/ND-Pyomo-Cookbook/04.03-Job-Shop-Scheduling.html
     '''
     # x[i,t] - binary: whether or not to restore a node at time t, 0 otherwise.
     # y[k,t] - binary: whether or not to restore a link at time t, 0 otherwise.
@@ -433,7 +432,7 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
     num_node = len(node_list)
     num_arc = len(arc_list)
     # total restoration time
-    num_restore_max = 1
+    num_restore_max = 2
     num_damage_comp = y_arc_init.count(0) + y_node_init.count(0)
     from math import ceil
     time_list = list(range(ceil(num_damage_comp/num_restore_max) + 1))
@@ -504,7 +503,7 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
                 model.add_constr(supply[i][t] <= y_node[i][t]*supply_cap[i])
         
 #    # 4.5 start node of an arc should be restored before the arc
-#        # this constraint is redundant
+#        # this constraint is redundant.
 #    for k in np.arange(num_arc):
 #        for i in np.arange(num_node):
 #            if i==arc_list[k][0]:
@@ -560,10 +559,9 @@ def optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap):
                     x_arc_sol_df.loc[k,'restore_time'] = t
                     
         # # 6.3 print the number of variables and constraints
-        # print('model has {} vars, {} constraints and {} nzs'.format(model.num_cols, model.num_rows, model.num_nz))
-        
-        # visualize the schedule
-        
+        # print('model has {} vars, {} constraints and {} nzs'.format(model.num_cols,\
+                    # model.num_rows, model.num_nz))
+               
         return obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list
     
     else:
@@ -602,7 +600,8 @@ arc_data = pd.read_csv('./data/case_4_node/arc_data.csv')
 
 # 2.0 extract data
 # 2.1 node
-demand, supply_cap = node_data.demand.astype(float).tolist(), node_data.supply_cap.tolist() # demand should be float format
+demand, supply_cap = node_data.demand.astype(float).tolist(),\
+                     node_data.supply_cap.tolist() # demand should be float format
 node_list = node_data.node_id.tolist()
 
 # 2.2 arc
@@ -615,27 +614,79 @@ arc_list = get_arc_list(start_node, end_node)
 flow_cap = arc_data.flow_cap.astype(float).tolist()
 
 # 2.3 initial state of nodes and arcs
-y_node_init, y_arc_init = node_data.y_node_init.astype(float).tolist(), arc_data.y_arc_init.astype(float).tolist()
+y_node_init, y_arc_init = node_data.y_node_init.astype(float).tolist(),\
+                          arc_data.y_arc_init.astype(float).tolist()
 
-#y_node_init = [0*item for item in y_node_init]
-#y_arc_init = [0*item for item in y_arc_init]
-# 
+# 3.0 solve the model
 obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list = \
      optimize_restore(y_node_init, y_arc_init, demand, flow_cap, supply_cap)
 
-# dispaly x and y
+# 4.0 extract results
+# extract x and y
 x_arc_arr = convert_solu_list_to_arr(x_arc, time_list)
 x_node_arr = convert_solu_list_to_arr(x_node, time_list)
 
-y_arc_arr = convert_solu_list_to_arr(y_arc, time_list)
-y_node_arr = convert_solu_list_to_arr(y_node, time_list)
+#y_arc_arr = convert_solu_list_to_arr(y_arc, time_list)
+#y_node_arr = convert_solu_list_to_arr(y_node, time_list)
 
-# display slack and supply   
+# extract slack and supply   
 slack_arr = convert_solu_list_to_arr(slack, time_list)  
-supply_arr = convert_solu_list_to_arr(supply, time_list) 
+#supply_arr = convert_solu_list_to_arr(supply, time_list) 
 
-# flow
-flow_arr = convert_solu_list_to_arr(flow, time_list)
+## extract flow
+#flow_arr = convert_solu_list_to_arr(flow, time_list)
 
+# 5.0 visualize results
+# 5.1 schedule
+# store scheduling resulst in a df
+    # df: index: damaged component; columns: start_time, duration, finish time
+# get damaged component id    
+comp_list = node_list + arc_list
+init_state_list = y_node_init + y_arc_init
+damaged_comp_list =  [comp_list[i] for i, item in enumerate(init_state_list) if item==0]
 
-    
+# get restoration start time point
+x_comp = np.concatenate((x_node_arr, x_arc_arr), axis=0)
+# select restoration start time of damaged components
+x_comp_damage = x_comp[np.amax(x_comp, axis=1)==1]
+# restore start time of each component
+restore_start_time = np.argmax(x_comp_damage, axis=1)
+
+# create df and sort by restore start time
+schedule_df = pd.DataFrame({'restore_start_time':restore_start_time}, index = damaged_comp_list)
+schedule_df = schedule_df.sort_values(by='restore_start_time')
+schedule_df['duration'] = 1
+schedule_df['restore_end_time'] = schedule_df['restore_start_time'] + schedule_df['duration']
+
+# plot
+    # refs.: https://towardsdatascience.com/from-the-bridge-to-tasks-planning-build-gannt-chart-in-python-r-and-tableau-7256fb7615f8
+             # https://plotly.com/python/gantt/
+# plot parameters
+max_time = schedule_df['restore_end_time'].max()
+tasks = {task: (i+1)*10 for i, task in enumerate(damaged_comp_list)}
+
+fig, ax = plt.subplots(figsize=(8, 3+max_time/4))         
+for i in np.arange(schedule_df.shape[0]):
+    ax.broken_barh([(schedule_df['restore_start_time'].iloc[i], schedule_df['duration'].iloc[i])],
+                    yrange = (i, 1),
+                    facecolors = ('tab:red') if isinstance(schedule_df.index[i], int) else ('tab:blue')) 
+            
+#ax.set_title('Restoration schedule')
+ax.set_ylabel('Component')
+ax.set_xlabel('Time period')
+ax.set_yticks([i + 0.5 for i in np.arange(schedule_df.shape[0])]) 
+ax.set_yticklabels(schedule_df.index)
+ax.set_xticks(np.arange(0, max_time+1, 1.0))
+ax.set_xticklabels(np.arange(1,max_time+2, 1))
+
+ax.grid(True)
+
+colors = {'Node':'tab:red', 'Link':'tab:blue'}         
+labels = list(colors.keys())
+handles = [plt.Rectangle((0,0),1,1, color=colors[label]) for label in labels]
+plt.legend(handles, labels, loc='lower right')
+
+plt.savefig('schedule.pdf')
+plt.show()
+
+# 5.2 restoration rate over time    
