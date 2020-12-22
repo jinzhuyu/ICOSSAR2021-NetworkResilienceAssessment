@@ -385,10 +385,31 @@ os.chdir('C:/Users/yuj5/Documents/GitHub/ICOSSAR2021')
 power = network(dt.p_nodedata, dt.p_edgedata) # instantiate the power network
 gas = network(dt.g_nodedata, dt.g_edgedata) # instantiate the gas network
 s = System(power, gas, dt.g2p_edgedata) # instantiate the system class
+s.initial_failure('randomness', 0.2)  # damaged nodes due to attack before failure propagation
+s.cascading_failure(0.2) # simulate casacading failure
+s.node_fail_evol  # =1 if a node fails at a time step during failure propagation
 
-# simulate failure
-#s.initial_failure('randomness', 0.3) #the type of the initial failure sequence, choice: 'randomness', 'dc' - degree centrality, 'bc' - betweenness centrality, 'kc' - katz centrality, 'cc': closeness centrality
-#s.cascading_failure(0.5)
+
+def get_damage_state(self):
+    
+    def get_damage_comp_idx(comp_fail_evol):
+        fail_node_idx = []
+        for i in np.arange(len(node_fail_evol)-1):
+            fail_node_idx += np.where(node_fail_evol[i]==1)[0].tolist()
+            
+        return fail_node_idx
+    
+    # index of components that fail during failure propagation
+    node_fail_idx = get_damage_comp_idx(s.node_fail_evol)
+    link_fail_idx = get_damage_comp_idx(s.link_fail_evol)
+    
+    # idnex of components that fail due to attack
+    
+    
+    # set the respective y_init to 0 if the component fails at either stage
+    
+    return 
+
 attack_portions = np.round(np.arange(0,1.02,0.05), 2)
 attack_types = ['randomness']  #, 'dc']
 performance_mean_df = compare_attack_types(s=s, attack_types=attack_types, attack_portions=attack_portions,
@@ -406,7 +427,7 @@ class NetworkRestoration(System):
     
         '''optimize the restoration of damaged components
         input:
-            nodes_damaged - list:
+            y_node_init and y_arc_init - list: =1 if not damaged, and 0 otherwise
             arcs damaged - dictionary: xxx
             
         output:
@@ -584,8 +605,8 @@ class NetworkRestoration(System):
     def import_data(self):
     
         # 1 import data    
-        node_data = pd.read_csv('./data/case_4_node/node_data.csv')
-        arc_data = pd.read_csv('./data/case_4_node/arc_data.csv')
+        node_data = pd.read_csv('./data/case_6_node/node_data.csv')
+        arc_data = pd.read_csv('./data/case_6_node/arc_data.csv')
         
         # 2 extract data
         # 2.1 node
