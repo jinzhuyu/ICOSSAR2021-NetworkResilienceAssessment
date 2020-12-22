@@ -10,11 +10,11 @@ import networkx as nx
 class network(object):
     """ Define the network class for modeling the power and gas networks
     """
-    def __init__(self, node_data, edge_data):
+    def __init__(self, node_data, arc_data):
         """
         Input：
             node_data: pandas.dataframe, the data of the nodes
-            edge_data: pandas.dataframe, the data of the edges
+            arc_data: pandas.dataframe, the data of the arcs
         """
         #read the node data
         self.nodenum = len(node_data)
@@ -24,13 +24,13 @@ class network(object):
         self.nodeid = node_data['node_id']
         
         
-        #read the edge data
-        self.edgenum = len(edge_data)
-        self.start_node_id = edge_data['start_node']
-        self.end_node_id = edge_data['end_node']
-        self.flow_cap = edge_data['flow_cap']
-        self.conv_rate = edge_data['conv_rate']
-        self.flow = edge_data['flow']
+        #read the arc data
+        self.arcnum = len(arc_data)
+        self.start_node_id = arc_data['start_node']
+        self.end_node_id = arc_data['end_node']
+        self.flow_cap = arc_data['flow_cap']
+        self.conv_rate = arc_data['conv_rate']
+        self.flow = arc_data['flow']
         
         self.nodeid2num()
         self.adj_matrix()
@@ -52,7 +52,7 @@ class network(object):
         """
         self.adjmatrix = np.zeros((self.nodenum, self.nodenum), dtype = int)
         
-        for i in range(self.edgenum):
+        for i in range(self.arcnum):
             self.adjmatrix[self.ID2num[self.start_node_id.iloc[i]], self.ID2num[self.end_node_id.iloc[i]]] = 1
     
     def flow_matrix(self):
@@ -60,7 +60,7 @@ class network(object):
         """
         self.flowmatrix = np.zeros((self.nodenum, self.nodenum), dtype = float)
         
-        for i in range(self.edgenum):
+        for i in range(self.arcnum):
             self.flowmatrix[self.ID2num[self.start_node_id.iloc[i]], self.ID2num[self.end_node_id.iloc[i]]] = self.flow.iloc[i]
     
     def flow_check(self):
@@ -73,7 +73,7 @@ class network(object):
         """ Create the adjacency list of the network, directed graph
         """
         self.adjlist = {}
-        for i in range(self.edgenum):
+        for i in range(self.arcnum):
             if(self.ID2num[self.start_node_id.iloc[i]] not in self.adjlist.keys()):
                 self.adjlist[self.ID2num[self.start_node_id.iloc[i]]] = []
             

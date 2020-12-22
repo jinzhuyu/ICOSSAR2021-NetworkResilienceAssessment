@@ -11,7 +11,7 @@ import pandas as pd
 import numpy as np
 import networkx as nx
 import os
-import os 
+
 dir_path = os.path.dirname(os.path.realpath(__file__)) #Change the directory to the one where the current script is located
 
 nodedata = pd.read_csv('./data/nodes_data.csv')
@@ -22,13 +22,13 @@ g_nodenum = 25
 p_nodedata = nodedata.iloc[0:p_nodenum, :]
 g_nodedata = nodedata.iloc[p_nodenum:(p_nodenum + g_nodenum), :]
 
-p_edgenum = 34
-g_edgenum = 24
-p2g_edgenum = 4
-g2p_edgenum = 1
-p_edgedata = arcdata.iloc[0:p_edgenum, :]
-g_edgedata = arcdata.iloc[p_edgenum:(p_edgenum + g_edgenum), :]
-g2p_edgedata = arcdata.iloc[(p_edgenum + g_edgenum):(p_edgenum + g_edgenum + p2g_edgenum), :]
-p2g_edgedata = arcdata.iloc[(p_edgenum + g_edgenum + p2g_edgenum):(p_edgenum + g_edgenum + p2g_edgenum + g2p_edgenum), :]
+p_arcnum = 34
+g_arcnum = 24
+p2g_arcnum = 4
+g2p_arcnum = 1
+p_arcdata = arcdata.iloc[0:p_arcnum, :]
+g_arcdata = arcdata.iloc[p_arcnum:(p_arcnum + g_arcnum), :]
+g2p_arcdata = arcdata.iloc[(p_arcnum + g_arcnum):(p_arcnum + g_arcnum + p2g_arcnum), :]
+p2g_arcdata = arcdata.iloc[(p_arcnum + g_arcnum + p2g_arcnum):(p_arcnum + g_arcnum + p2g_arcnum + g2p_arcnum), :]
 
 
