@@ -1,4 +1,0 @@
-net_id,start_node,end_node,flow,flow_cap,redun_rate,y_arc_init
-1,1,2,2,2.4,0.2,0
-1,2,3,1,1.2,0.2,0
-1,2,4,1,1.2,0.2,0
