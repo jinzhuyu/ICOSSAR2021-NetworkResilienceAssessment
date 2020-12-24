@@ -44,6 +44,7 @@ class System(object):
         self.topo_sort()
         self.centrality()
         self.propertymapping()
+        
     
     def adjflow_matrix(self): #first gas then power
         """ Create the adjacency matrix of the whole system by plugging the adjacency matrix of the power and gas networks 
@@ -94,6 +95,12 @@ class System(object):
         self.kc = list(nx.algorithms.centrality.katz_centrality(self.graph).values())
         self.cc = list(nx.algorithms.centrality.closeness_centrality(self.graph).values())
         self.bc = list(nx.algorithms.centrality.betweenness_centrality(self.graph).values())
+
+
+#    def get_arc_id_list(self):
+#        start_node_id_list = self.gas.start_node_id.to_list() + self.power.start_node_id.to_list()
+#        end_node_id_list = self.gas.end_node_id.to_list() + self.power.end_node_id.to_list()
+#        self.arc_id_list = [(start_node_id_list[i], end_node_id_list[i]) for i in range(len(start_node_id_list))]
         
     def propertymapping(self):
         """ Mapping all properties in the network to the system
@@ -102,16 +109,21 @@ class System(object):
         self.demand = np.concatenate((np.array(self.gas.demand), np.array(self.power.demand)))
         self.supply_cap = np.concatenate((np.array(self.gas.supply_cap), np.array(self.power.supply_cap)))
         self.supply = np.concatenate((np.array(self.gas.supply), np.array(self.power.supply)))
+        
+        # array of list, each element is a list that will contain the start node number and end node number of an arc
         self.arclist = np.empty((self.power.arcnum + self.gas.arcnum + len(self.g2p_arcdata), 2), dtype = int)
         
-        self.conv_rate = np.concatenate((np.array(self.gas.conv_rate), np.array(self.power.conv_rate)))
+        self.conv_rate = np.concatenate((np.array(self.gas.conv_rate), np.array(self.power.conv_rate), np.array(self.g2p_arcdata.conv_rate)))
+        self.flow_cap = np.concatenate((np.array(self.gas.flow_cap), np.array(self.power.flow_cap), np.array(self.g2p_arcdata.flow_cap)))  
         
-        self.node_list = s.gas.nodeid.to_list() + s.power.nodeid.to_list()
-        
-        def get_arc_list(self):
-            start_node_list = self.gas.start_node_id.to_list() + self.power.start_node_id.to_list()
-            end_node_list = self.gas.end_node_id.to_list() + self.power.end_node_id.to_list()
-            self.arc_list = [(start_node_list[i], end_node_list[i]) for i in range(len(start_node_list))]
+        # get start node id and end node id
+        self.node_id_list = self.gas.nodeid.to_list() + self.power.nodeid.to_list()
+        start_node_id_list = self.gas.start_node_id.to_list() + self.power.start_node_id.to_list() + self.g2p_arcdata.start_node.to_list()
+        end_node_id_list = self.gas.end_node_id.to_list() + self.power.end_node_id.to_list() + self.g2p_arcdata.end_node.to_list()
+        self.arc_id_list = [(start_node_id_list[i], end_node_id_list[i]) for i in range(len(start_node_id_list))]
+#        self.arc_id_list = self.get_arc_id_list
+#        
+#        print(self.arc_id_list)
         
         self.flowcapmatrix = np.zeros((self.nodenum, self.nodenum), dtype = float)
         self.convratematrix = np.zeros((self.nodenum, self.nodenum), dtype = float)
@@ -181,10 +193,10 @@ class System(object):
         
         return adjmatrix
     
-    def cascading_failure(self, alpha):
+    def cascading_failure(self, redun_rate=0.2):
         """ Simulate the cascading failure
         Input:
-            alpha: redundancy
+            redun_rate: redundancy
         """
         #Update the initial failure scenario: update the adjmatrix and flowmatrix
         self.adjmatrix_init = copy.copy(self.adjmatrix)
@@ -211,19 +223,19 @@ class System(object):
             adjmatrix = copy.copy(self.adjmatrix_evol[-1])
         
             for node in self.topo_order:
-                flowin = np.sum(flowmatrix[:, node]*self.convratematrix[:, node]) + self.supply[node]*(1 - self.node_fail_evol_track[-1][node]) #calculate the total flow going into the node
+                #calculate the total flow going into the node
+                flowin = np.sum(flowmatrix[:, node]*self.convratematrix[:, node]) + self.supply[node]*(1 - self.node_fail_evol_track[-1][node])
                 #Some flows serve for the node demand value, the remaining part goes to the following distribution process
-                if(np.round(flowin, 3) >= np.round(self.demand[node], 3)):
+                if np.round(flowin, 3) >= np.round(self.demand[node], 3):
                     satisfynode[node] = self.demand[node]
                     flowin -= self.demand[node]
                 else:
-                    # print(2, node, flowin, self.demand[node])
                     satisfynode[node] = flowin/2 #if not enough to supply for the demand of the node, supply a half
                     flowin = flowin/2
 
                 performance_gas = np.sum(satisfynode[:self.gas.nodenum])/np.sum(self.demand[:self.gas.nodenum])
-                performance_power = np.sum(satisfynode[-self.power.nodenum:])/np.sum(self.demand[-self.power.nodenum:])
-                performance_temp = np.mean([performance_gas])
+#                performance_power = np.sum(satisfynode[-self.power.nodenum:])/np.sum(self.demand[-self.power.nodenum:])
+                performance_temp = performance_gas  # np.mean([performance_gas, performance_power])
                 self.performance.append(performance_temp) #Track down the performance
                 
                 #Redistribute the flow, here we can introduce some randomness to account for the uncertainty
@@ -241,8 +253,7 @@ class System(object):
     
                                 flowout[flowout != 0] = flowout[flowout != 0] + unit_flow
                                 flowout[index] = flowout[index] - unit_flow - noise_flow
-                        
-                        
+                                                
                     else: #No links fail,redistribute according to the ratio of flow at last time step
                         flowout = self.flowmatrix_evol[-2][node, :]/np.sum(self.flowmatrix_evol[-2][node, :])*flowin
                 
@@ -253,14 +264,14 @@ class System(object):
             
             for i in range(self.arcnum):
                 node1, node2 = self.arclist[i, 0], self.arclist[i, 1] 
-                if(np.abs(flowmatrix[node1, node2]) > (1 + alpha)*self.flowcapmatrix[node1, node2]):
+                if(np.abs(flowmatrix[node1, node2]) > (1 + redun_rate)*self.flowcapmatrix[node1, node2]):
                     # print(node1, node2, flowmatrix[node1, node2], self.flowcapmatrix[node1, node2])
                     link_seq_track[i] = 1
         
             #node failure caused by flow overload 
             for i in range(self.nodenum):
                 # print(i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
-                if((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + alpha)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
+                if((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + redun_rate)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
                     # print(time, 'node', i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
                     node_seq_track[i] = 1
             
@@ -276,12 +287,12 @@ class System(object):
             #link failure caused by flow overload
             for i in range(self.arcnum):
                 node1, node2 = self.arclist[i, 0], self.arclist[i, 1] 
-                if(np.abs(flowmatrix[node1, node2]) > (1 + alpha)*self.flowcapmatrix[node1, node2]):
+                if(np.abs(flowmatrix[node1, node2]) > (1 + redun_rate)*self.flowcapmatrix[node1, node2]):
                     link_seq[i] = 1
             
             #node failure caused by flow overload 
             for i in range(self.nodenum):
-                if((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + alpha)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
+                if((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + redun_rate)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
                     node_seq[i] = 1
             
             self.node_fail_evol.append(node_seq)
@@ -304,40 +315,13 @@ class System(object):
                 break
     
 
-    # added functions start from here
-    def get_damage_state(self):
-        '''
-        get final damage state of components from the results of cascading failure at each time step
-        feed into the optimization problem as y_init, the initial damage state of components before the restoration is initiated
-        '''
-        
-        def get_comp_damage_state(self, comp_fail_evol, type='node'):
-            
-            # get index of failed components
-            fail_comp_idx = []
-            for i in np.arange(len(comp_fail_evol)-1):
-                fail_comp_idx += np.where(comp_fail_evol[i]==1)[0].tolist()
-            
-            
-            # set the respective y_init to 0 if the component fails at either stage
-            y_comp_init_temp = [1]*len(comp_fail_evol[0])
-            y_comp_init = [0 if i in fail_comp_idx else item for i,item in enumerate(y_comp_init_temp)]
-            
-            return y_comp_init
-            
-        # index of components that fail during failure propagation
-            # t=0, the components that fail due to direct
-        y_node_init = get_comp_damage_state(s, s.node_fail_evol)
-        y_link_init = get_comp_damage_state(s.link_fail_evol)  
-            
-        return y_node_init, y_link_init
-                 
+    # added functions start from here                 
     # to do: plot the networks
     def plot_inter_networks(self, link_df, is_save=True):
         
         G = pygraphviz.AGraph(strict=False, directed=True)
         
-        G.add_nodes_from(self.node_list)
+        G.add_nodes_from(self.node_id_list)
     
         for i in np.arange(len(link_df)):    
             G.add_arc(link_df[i,0], link_df[i,1], label=link_df[i,3])
@@ -368,7 +352,7 @@ class System(object):
         
         for i in np.arange(len(attack_portions)):    
             for j in np.arange(len(attack_types)):           
-                # repeat 50 times to obtain the average performance
+                # repeat multiple times to obtain the average performance
                 for k in np.arange(n_repeat_random):
                     # print(k, "-th repetition for random attack")
                     self.initial_failure(attack_types[j], attack_portions[i])
@@ -376,29 +360,23 @@ class System(object):
                     performance_final_temp = self.performance[-1]
                     performance[i,j,k] = performance_final_temp
                 
-                performance_mean[i,j] = np.mean(performance[i,j,:])              
-    #                if attack_portions[i]>=0.05:
-    #                    print('Attack type: ', attack_types[j])
-    #                    print('Attack portion: ', attack_portions[i])
-    #                    print('Initial failure sequence: ', initial_fail_seq_temp)
-    #                    print('Number of nodes failed: ', len(initial_fail_seq_temp))                                 
+                performance_mean[i,j] = np.mean(performance[i,j,:])                                            
         
         # convert array into pandas df
-        performance_mean_df = pd.DataFrame(data=performance_mean,
-                                           index=attack_portions.tolist(), columns=attack_types)
+        performance_mean_df = pd.DataFrame(data=performance_mean, index=attack_portions.tolist(), columns=attack_types)
         print('Cascading failure ends.')
         
         return performance_mean_df
     
    
     def plot_performance_different_attack(self, attack_types = ['randomness', 'dc', 'bc', 'kc', 'cc'],
-                             attack_portions=np.round(np.arange(0,1.001,0.05),2),
-                             redun_rate = 0.2, n_repeat_random=50, is_save=True):
+                                          attack_portions=np.round(np.arange(0,1.001,0.05),2),
+                                          redun_rate = 0.2, n_repeat_random=50, is_save=True):
     # plot the performance of different attack types under different attack portions
         # attach both nodes and links? But links do not have a degree.
         
-        performance_df = self.compare_attack_types(attack_types, attack_portions,
-                                                   redun_rate, n_repeat_random)
+        performance_df = self.compare_attack_types(attack_types=attack_types, attack_portions=attack_portions,
+                                                   redun_rate=redun_rate, n_repeat_random=n_repeat_random)
         
         plt.figure(figsize=(4, 3))
         
@@ -408,41 +386,60 @@ class System(object):
         plt.xlabel('Percentage of attacked nodes')
         plt.ylabel('Performance of networks')
         
-        plt.ylim(bottom=-0.05)
+        plt.ylim(bottom=-0.01)
         
         plt.grid(axis='both')
                 
-        legend_labels = ('Random', 'Degree-based')  #, 'Betweenness-based', 'Katz-based', 'Closeness-based')
+        legend_labels = ('Random', 'Degree-based', 'Betweenness-based', 'Katz-based', 'Closeness-based')[:performance_df.shape[1]]
         plt.legend(legend_labels)
         
         if is_save:
             plt.savefig('compare_attack_types.pdf')
         plt.show()
 
-# change directory
-os.chdir('C:/Users/yuj5/Documents/GitHub/ICOSSAR2021')
 
-# create network 
-power = network(dt.p_nodedata, dt.p_arcdata) # instantiate the power network
-gas = network(dt.g_nodedata, dt.g_arcdata) # instantiate the gas network
-s = System(power, gas, dt.g2p_arcdata) # instantiate the system class
+    def get_comp_damage_state_temp(self, type='node'):
+        
+        # get index of failed components
+        if type=='node':
+            comp_fail_evol = copy.copy(self.node_fail_evol)
+        else:
+            comp_fail_evol = copy.copy(self.link_fail_evol)
+        fail_comp_idx = []
+        for i in np.arange(len(comp_fail_evol)-1):
+            fail_comp_idx += np.where(comp_fail_evol[i]==1)[0].tolist()
+        
+        
+        # set the respective y_init to 0 if the component fails at either stage
+        y_comp_init_temp = [1]*len(comp_fail_evol[0])
+        y_comp_init = [0 if i in fail_comp_idx else item for i,item in enumerate(y_comp_init_temp)]
+        
+        return y_comp_init
 
+    def get_damage_state(self, attack_types='randomness',
+                         attack_portions=0.2,
+                         redun_rate=0.2):
+        '''
+        get final damage state of components from the results of cascading failure at each time step
+        feed into the optimization problem as y_init, the initial damage state of components before the restoration is initiated
+        '''
+        
+        # simulate initial attack
+        self.initial_failure(attack_types, attack_portions)
+        
+        # simulate casacading failure
+        self.cascading_failure(redun_rate)
+        
+        # index of components that fail during failure propagation
+            # t=0, the components that fail due to direct
+        y_node_init, y_link_init = self.get_comp_damage_state_temp(type='node'), self.get_comp_damage_state_temp(type='link')
+            
+        return y_node_init, y_link_init
 
-## compare performance under different types of attacks
-#attack_portions = np.round(np.arange(0,1.02,0.05), 2)
-#attack_types = ['randomness']  #, 'dc']
-#performance_mean_df = compare_attack_types(s=s, attack_types=attack_types, attack_portions=attack_portions,
-#                                           redun_rate=redun_rate, n_repeat_random=50)
-
-# plot
-s.plot_performance_different_attack(is_save=False)
-
-
-
-#%% optimize the repair schedule
-class NetworkRestoration(System):
-    
-    def optimize_restore(self):
+    # optimize the repair schedule  
+    def optimize_restore(self, attack_types = 'randomness',
+                         attack_portions=0.2,
+                         redun_rate=0.2):
     
         '''optimize the restoration of damaged components
         input:
@@ -474,16 +471,16 @@ class NetworkRestoration(System):
         # import packages/functions
         from mip import Model, minimize, xsum, BINARY, OptimizationStatus
         
-        # get initial damage state
-        y_node_init, y_arc_init = self.get_damage_state
+        # 0 get initial damage state
+        y_node_init, y_arc_init = self.get_damage_state(attack_types=attack_types, attack_portions=attack_portions, redun_rate=redun_rate)
         
-        # 1. decalre and initiate model
+        # 1 decalre and initiate model
         model = Model()
         
         # 2 add decision variable
         # 2.1 schedule of repairing components
-        num_node = self.nodenum
-        num_arc = self.arcnum
+        num_node = copy.copy(self.nodenum)
+        num_arc = copy.copy(self.arcnum)
         # total restoration time
         num_restore_max = 2
         num_damage_comp = y_arc_init.count(0) + y_node_init.count(0)
@@ -525,15 +522,15 @@ class NetworkRestoration(System):
         # node in each network: exclude inflow from interdependent links onto that node
         for i in np.arange(num_node):
             for t in time_list:
-                model.add_constr(xsum(flow[k][t] for k in np.arange(num_arc) if self.node_list[i]==self.arc_list[k][0]) -
+                model.add_constr(xsum(flow[k][t] for k in np.arange(num_arc) if self.node_id_list[i]==self.arc_id_list[k][0]) -
                                  xsum(flow[k][t] for k in np.arange(num_arc) if \
-                                      (self.node_list[i]==self.arc_list[k][1] and self.conv_rate[k]==1))\
+                                      (self.node_id_list[i]==self.arc_id_list[k][1] and self.conv_rate[k]==1))\
                                  == supply[i][t] + slack[i][t] - self.demand[i])
         
         # end node of interdependent links: supply <= converted supply/inflow to that node
         for i in np.arange(num_node):
             for k in np.arange(num_arc):
-                if self.arc_list[k][1]==self.node_list[i] and self.conv_rate[k]!=1:
+                if self.arc_id_list[k][1]==self.node_id_list[i] and self.conv_rate[k]!=1:
                     for t in time_list:
                         model.add_constr(supply[i][t] <= self.conv_rate[k]*flow[k][t])
         
@@ -543,8 +540,8 @@ class NetworkRestoration(System):
         for t in time_list:
             for k in np.arange(num_arc):
                 # use auxillary variables to delinearize the product of binary variables
-                start_node_idx = self.node_list.index(self.arc_list[k][0])
-                end_node_idx = self.node_list.index(self.arc_list[k][1])
+                start_node_idx = self.node_id_list.index(self.arc_id_list[k][0])
+                end_node_idx = self.node_id_list.index(self.arc_id_list[k][1])
                 n_binary_var = 3
                 # aux_z <= each binary variable
                 model.add_constr(aux_z_arc[k][t] <= y_node[start_node_idx][t])
@@ -602,99 +599,61 @@ class NetworkRestoration(System):
             # print('model has {} vars, {} constraints and {} nzs'.format(model.num_cols,\
                         # model.num_rows, model.num_nz))
                    
-            return obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list
+            return obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list, y_node_init, y_arc_init
         
         else:
             print('Infeasible or unbounded problem')
-
-    
-    #%% test optimization model
-    # 1 import data
-    # 1.1 prepare arc data
-    def get_arc_list(self, start_node, end_node):
-        '''get arc list from lists of start node and end node
-        
-        returns:
-            list of tuple elements, e.g. (start node, end node)
-        '''
-        arc_list = []
-        for i in np.arange(len(start_node)):
-            arc_list.append((start_node[i],end_node[i]))
-            
-        return arc_list
-    
-#    # 1.2 import data    
-#    def import_data(self):
-#    
-#        # 1 import data    
-#        node_data = pd.read_csv('./data/case_6_node/node_data.csv')
-#        arc_data = pd.read_csv('./data/case_6_node/arc_data.csv')
-#        
-#        # 2 extract data
-#        # 2.1 node
-#        demand, supply_cap = node_data.demand.astype(float).tolist(),\
-#                             node_data.supply_cap.tolist() # demand should be float format
-#        node_list = node_data.node_id.tolist()
-#        
-#        # 2.2 arc
-#        # get list of arcs
-#        start_node = arc_data.start_node
-#        end_node = arc_data.end_node
-#        arc_list = get_arc_list(start_node, end_node)
-#        
-#        # flow
-#        flow_cap = arc_data.flow_cap.astype(float).tolist()
-#        conv_rate = arc_data.conv_rate.astype(float).tolist()
-#        
-#        # initial state of nodes and arcs
-#        y_node_init, y_arc_init = node_data.y_node_init.astype(float).tolist(),\
-#                                  arc_data.y_arc_init.astype(float).tolist()
-#    
-#        return node_list, arc_list, y_node_init, y_arc_init, demand, flow_cap, supply_cap, conv_rate
     
     # 2 get solution
     # 2.1 convert solution results
-    def convert_solu_list_to_arr(self, var, time_list):
+    def convert_solu_list_to_arr(self, var):
         '''convert list of solutions to variables in mip entity format to array
         input:
             var - mip solution list: e.g. var=y_var, solution to the functional state of arcs
         '''
-        var_arr = np.zeros([len(var), len(time_list)])
+        var_arr = np.zeros([len(var), len(var[0])])
         for j in np.arange(len(var)):
-            for t in time_list:
+            for t in np.arange(len(var[0])):
                 var_arr[j,t] = var[j][t].x
         
         return var_arr
     
     # 2.2 solve the model and extract solutions
-    def get_solution(self, y_node_init, y_arc_init):
+    def get_solution(self, attack_types = 'randomness',
+                     attack_portions=0.2,
+                     redun_rate = 0.2):
         
         # 1 solve the model
-        obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list = \
-             self.optimize_restore(y_node_init, y_arc_init)
-        
-        
+        obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list, y_node_init, y_arc_init = \
+            self.optimize_restore(attack_types=attack_types, attack_portions=attack_portions, redun_rate=redun_rate)
+               
         # 2 extract results
         # extract x and y
-        x_node_arr = self.convert_solu_list_to_arr(x_node, time_list)
-        x_arc_arr = self.convert_solu_list_to_arr(x_arc, time_list)
+        x_node_arr = self.convert_solu_list_to_arr(x_node)
+        x_arc_arr = self.convert_solu_list_to_arr(x_arc)
         
         #y_arc_arr = convert_solu_list_to_arr(y_arc, time_list)
         #y_node_arr = convert_solu_list_to_arr(y_node, time_list)
         
         # extract slack and supply   
-        slack_arr = self.convert_solu_list_to_arr(slack, time_list)  
+        slack_arr = self.convert_solu_list_to_arr(slack)  
         #supply_arr = convert_solu_list_to_arr(supply, time_list) 
     
-        return x_node_arr, x_arc_arr, slack_arr, time_list
+        return x_node_arr, x_arc_arr, slack_arr, time_list, y_node_init, y_arc_init
     
     # 3 visualize results
     # 3.1.1 prepare schedule data
-    def get_schedule_df(self, y_node_init, y_arc_init, x_node_arr, x_arc_arr):
+    def get_schedule_df(self, attack_types='randomness',
+                        attack_portions=0.2,
+                        redun_rate=0.2):
         # store scheduling resulst in a df
             # df: index: damaged component; columns: start_time, duration, finish time
-        # get damaged component id    
-        comp_list = self.node_list + self.arc_list
+        # get damaged component id
+        x_node_arr, x_arc_arr, slack_arr, time_list, y_node_init, y_arc_init = \
+            self.get_solution(attack_types=attack_types, attack_portions=attack_portions, redun_rate=redun_rate)
+        comp_list = self.node_id_list + self.arc_id_list
+        # due to randomness in cascading failure, get damage state can only be called once within the function for solving the problem
+        # y_node_init, y_arc_init = self.get_damage_state(attack_types=attack_types,attack_portions=attack_portions, redun_rate=redun_rate)
         init_state_list = y_node_init + y_arc_init
         damaged_comp_list =  [comp_list[i] for i, item in enumerate(init_state_list) if item==0]
         
@@ -706,7 +665,7 @@ class NetworkRestoration(System):
         restore_start_time = np.argmax(x_comp_damage, axis=1)
         
         # create df and sort by restore start time
-        schedule_df = pd.DataFrame({'restore_start_time':restore_start_time}, index = damaged_comp_list)
+        schedule_df = pd.DataFrame({'restore_start_time':restore_start_time}, index=damaged_comp_list)
         schedule_df = schedule_df.sort_values(by='restore_start_time')
         schedule_df['duration'] = 1
         schedule_df['restore_end_time'] = schedule_df['restore_start_time'] + schedule_df['duration']
@@ -714,10 +673,16 @@ class NetworkRestoration(System):
         return schedule_df
     
     # 3.1.2 plot schedule
-    def plot_repair_schedule(self, schedule_df, is_save=True):
+    def plot_repair_schedule(self, attack_types = 'randomness',
+                             attack_portions=0.2,
+                             redun_rate=0.2, is_save=True):
         # plot the restoreation schedule
             # refs.: https://towardsdatascience.com/from-the-bridge-to-tasks-planning-build-gannt-chart-in-python-r-and-tableau-7256fb7615f8
-                     # https://plotly.com/python/gantt/
+                # https://plotly.com/python/gantt/
+        
+        # get schedule df 
+        schedule_df = self.get_schedule_df(attack_types=attack_types, attack_portions=attack_portions, redun_rate=redun_rate)
+        
         # plot parameters
         max_time = schedule_df['restore_end_time'].max()
         bar_ht = 0.75
@@ -728,19 +693,22 @@ class NetworkRestoration(System):
             ax.broken_barh([(schedule_df['restore_start_time'].iloc[i], schedule_df['duration'].iloc[i])],
                             yrange = (i+off_ht/4, bar_ht),
                             facecolors = ('tab:blue') if isinstance(schedule_df.index[i], tuple) else ('tab:red'),
-                            arccolor = "none") 
+                            edgecolor = "none") 
                     
+        ax.set_title('Repair schedule after {} attack'.format(attack_types))
+        
         ax.set_ylabel('Component')
         ax.set_xlabel('Time period')
         
         ax.set_yticks([i + off_ht for i in np.arange(schedule_df.shape[0])]) 
-        ax.set_yticklabels(schedule_df.index)
+        y_tick_labels = ["%s->%s" % item if isinstance(item,tuple) else item for item in schedule_df.index] 
+        ax.set_yticklabels(y_tick_labels)
         ax.set_ylim(bottom=-off_ht/2, top=schedule_df.shape[0]+off_ht/2)
         
         ax.set_xticks(np.arange(0, max_time+1, 1.0))
         ax.set_xticklabels(np.arange(1, max_time+2, 1))
         ax.set_xlim(left=-off_ht/2, right=max_time+off_ht/2)
-        
+      
         ax.grid(True)
         
         # draw legend manually
@@ -754,25 +722,146 @@ class NetworkRestoration(System):
             
         plt.show()
     
-    
-#    def main_schedule(self):
-#    
-#        node_list, arc_list, y_node_init, y_arc_init, conv_rate= import_data()
-#        
-#        x_node_arr, x_arc_arr, slack_arr, time_list = get_solution(y_node_init,
-#                                                                   y_arc_init)
-#        
-#        schedule_df = get_schedule_df(self, y_node_init, y_arc_init, x_node_arr, x_arc_arr)
-#        
-#        plot_schedule(schedule_df, is_save=True)
-#    
-#main_schedule()
+
+    def get_resil_df(self, attack_types = ['randomness'],
+                     attack_portions=0.2,
+                     redun_rate=0.2,
+                     n_repeat_random=50):
+        '''get df of resilience over time under each attack types
+        
+        output:
+            
+        '''
+        
+        # get solultion to slack at node at time t
+        if isinstance(attack_types, list):
+            n_attack_types = len(attack_types)
+        else:
+            n_attack_types = 1
+        time_max = 1
+        resil_arr_3d = np.ones([self.nodenum+self.arcnum, n_attack_types, n_repeat_random])  # time list is sufficiently large
+        for i in np.arange(len(attack_types)):
+            for j in np.arange(n_repeat_random):
+                _, _, slack_arr, time_list, _, _ = self.get_solution(attack_types=attack_types[i],
+                                                                     attack_portions=attack_portions,
+                                                                     redun_rate=redun_rate)        
+                # resilience at each time point
+                demand_satified_rate = 1 - slack_arr[np.where(self.demand!=0), :][0]/self.demand[np.where(self.demand!=0)][:, None]
+                resil_temp = np.mean(demand_satified_rate, axis=0)
+                time_max_temp = time_list[np.where(resil_temp==1)[-1][0]] + 1  # time to full restoration. [0]: get value of array
+                resil_arr_3d[:time_max_temp, i, j] = resil_temp[:time_max_temp]
+                # update number of time periods
+                if time_max_temp > time_max:
+                    time_max = time_max_temp
+        # get mean over n_repeat_random
+        resil_arr = np.mean(resil_arr_3d, axis=2)
+        # create df
+        # add time periods as index
+        idx = [item for item in range(1, time_max+1)]
+        resil_df = pd.DataFrame(data=resil_arr[:time_max,:], columns=attack_types, index=idx)      
+        
+        return resil_df 
+
+
+    def plot_resil(self, attack_types = ['randomness', 'dc'],
+                   attack_portions=0.2,
+                   redun_rate=0.2,
+                   n_repeat_random=50, is_save=True):
+        
+        resil_df = self.get_resil_df(attack_types=attack_types, attack_portions=attack_portions,
+                                     redun_rate=redun_rate, n_repeat_random=n_repeat_random)
+        
+        plt.figure(figsize=(4, 3))
+        
+        styles = ['k-','b--','r-.X','c--o','m--s'][:resil_df.shape[1]]
+        resil_df.plot(style=styles)
+        
+        plt.xlabel('Time period')
+        plt.ylabel('Resilience')
+        
+        plt.ylim(top=1.02)
+        
+        plt.grid(axis='both')
+                
+        legend_labels = ('Random', 'Degree-based', 'Betweenness-based', 'Katz-based', 'Closeness-based')[:resil_df.shape[1]]
+        plt.legend(legend_labels, loc='lower right')
+        
+        if is_save:
+            plt.savefig('resilience.pdf')
+        plt.show()
+
+   
 
 # 3.2 restoration rate over time  
         
 def main():
     
+    # change directory
+    os.chdir('C:/Users/yuj5/Documents/GitHub/ICOSSAR2021')
+    
+    # create network 
+    power = network(dt.p_nodedata, dt.p_arcdata) # instantiate the power network
+    gas = network(dt.g_nodedata, dt.g_arcdata) # instantiate the gas network
+    s = System(power, gas, dt.g2p_arcdata) # instantiate the system class
+    
+    ## compare performance under different types of attacks
+    #attack_portions = np.round(np.arange(0,1.02,0.05), 2)
+    attack_types = ['randomness'] #, 'dc', 'bc']
+    
+    # plot
+    # performance under different types of attacks
+    s.plot_performance_different_attack(attack_types=attack_types, n_repeat_random=1, is_save=False)
+    
+    # restoration schedule after cascading failures under different types of attacks
+    attack_types = 'dc'
+    s.plot_repair_schedule(attack_types=attack_types, is_save=True)
+    
+    s.plot_resil(attack_types=['randomness','dc', 'bc'], n_repeat_random=2, is_save=True)
+    
+
+main()        
     
     
-    NetworkRestoration.plot_repair_schedule
-    NetworkRestoration.plot_restoration_rate
+## test optimization model
+    # 1 import data
+    # 1.1 prepare arc data
+#    def get_arc_id_list(self, start_node, end_node):
+#        '''get arc list from lists of start node and end node
+#        
+#        returns:
+#            list of tuple elements, e.g. (start node, end node)
+#        '''
+#        arc_id_list = []
+#        for i in np.arange(len(start_node)):
+#            arc_id_list.append((start_node[i],end_node[i]))
+#            
+#        return arc_id_list
+    
+#    # 1.2 import data    
+#    def import_data(self):
+#    
+#        # 1 import data    
+#        node_data = pd.read_csv('./data/case_6_node/node_data.csv')
+#        arc_data = pd.read_csv('./data/case_6_node/arc_data.csv')
+#        
+#        # 2 extract data
+#        # 2.1 node
+#        demand, supply_cap = node_data.demand.astype(float).tolist(),\
+#                             node_data.supply_cap.tolist() # demand should be float format
+#        node_id_list = node_data.node_id.tolist()
+#        
+#        # 2.2 arc
+#        # get list of arcs
+#        start_node = arc_data.start_node
+#        end_node = arc_data.end_node
+#        arc_id_list = get_arc_id_list(start_node, end_node)
+#        
+#        # flow
+#        flow_cap = arc_data.flow_cap.astype(float).tolist()
+#        conv_rate = arc_data.conv_rate.astype(float).tolist()
+#        
+#        # initial state of nodes and arcs
+#        y_node_init, y_arc_init = node_data.y_node_init.astype(float).tolist(),\
+#                                  arc_data.y_arc_init.astype(float).tolist()
+#    
+#        return node_id_list, arc_id_list, y_node_init, y_arc_init, demand, flow_cap, supply_cap, conv_rate
