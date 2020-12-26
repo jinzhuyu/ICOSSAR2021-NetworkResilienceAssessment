@@ -75,14 +75,13 @@ class System(object):
     
     def networkx_graph(self):
         """ Create the networkx object of the network
-        """
-        
+        """ 
         self.graph = nx.convert_matrix.from_numpy_matrix(self.adjmatrix, create_using = nx.DiGraph)
     
     def topo_sort(self):
         """ Perform the topological sort of the network, directed graph
         """
-        if(nx.algorithms.dag.is_directed_acyclic_graph(self.graph)):
+        if (nx.algorithms.dag.is_directed_acyclic_graph(self.graph)):
             self.topo_order = list(nx.topological_sort(self.graph))
         else:
             print('The current network is not the DAG')
@@ -158,13 +157,13 @@ class System(object):
         fail_num = math.floor(ratio*self.nodenum)
         self.initial_fail_seq_onehotcode = np.zeros(self.nodenum, dtype = int) #1 - failure, 0 - survive
         
-        if(Type == 'randomness'):
+        if (Type == 'randomness'):
             self.initial_fail_seq = random.sample(range(self.nodenum), fail_num)
         else:  # case fail_num > self.nodenum needs not be handled because [-fail_num:]= ['all elements']
             # sort in descending order (negate the original) and return the indice of the top fail_num nodes
             exec('self.initial_fail_seq = np.argsort(-np.array(self.{}))[:fail_num]'.format(Type))  # sort in an ascending approach
     
-        if(self.initial_fail_seq != []):
+        if (self.initial_fail_seq != []):
             self.initial_fail_seq_onehotcode[np.array(self.initial_fail_seq)] = 1
         self.initial_fail_link_onehotcode = np.zeros(self.arcnum, dtype = int) #There are no initial failed links
         
@@ -188,7 +187,7 @@ class System(object):
             link_fail_seq - the failed link number at current time step, numpy1Darray
         """
         for i in range(len(link_fail_seq)):
-            if(link_fail_seq[i] == 1):
+            if (link_fail_seq[i] == 1):
                 adjmatrix[self.arclist[i, 0], self.arclist[i, 1]] = 0
         
         return adjmatrix
@@ -234,20 +233,24 @@ class System(object):
                     flowin = flowin/2
 
                 performance_gas = np.sum(satisfynode[:self.gas.nodenum])/np.sum(self.demand[:self.gas.nodenum])
+                
+                print('gas performance', performance_gas, 'node', node)
+                
+                
 #                performance_power = np.sum(satisfynode[-self.power.nodenum:])/np.sum(self.demand[-self.power.nodenum:])
                 performance_temp = performance_gas  # np.mean([performance_gas, performance_power])
                 self.performance.append(performance_temp) #Track down the performance
                 
                 #Redistribute the flow, here we can introduce some randomness to account for the uncertainty
-                if(np.sum(adjmatrix[node, :]) == 0 or np.sum(self.flowmatrix_evol[-2][node, :]) == 0):
+                if (np.sum(adjmatrix[node, :]) == 0 or np.sum(self.flowmatrix_evol[-2][node, :]) == 0):
                     flowout = np.zeros(self.nodenum, dtype = float)
                 else:
-                    if(np.sum(adjmatrix[node, :]) != np.sum(self.adjmatrix_evol[-2][node, :])): # Some links fail, redistribute evenly with some random noise
+                    if (np.sum(adjmatrix[node, :]) != np.sum(self.adjmatrix_evol[-2][node, :])): # Some links fail, redistribute evenly with some random noise
                         flowout = 1/np.sum(adjmatrix[node, :])*flowin*adjmatrix[node, :]
                         
-                        if(flowin != 0): #The uncertainty only happens when there are multiple out-links and inflow !=0
+                        if (flowin != 0): #The uncertainty only happens when there are multiple out-links and inflow !=0
                             index = np.random.choice(np.argwhere(flowout != 0).reshape(-1)) #flow - beta where beta~U(0, flow/2)
-                            if(len(np.argwhere(flowout != 0).reshape(-1)) != 1):
+                            if (len(np.argwhere(flowout != 0).reshape(-1)) != 1):
                                 noise_flow = np.random.rand()*flowout[index]/2
                                 unit_flow = noise_flow/(len(np.argwhere(flowout != 0)) - 1)
     
@@ -264,14 +267,14 @@ class System(object):
             
             for i in range(self.arcnum):
                 node1, node2 = self.arclist[i, 0], self.arclist[i, 1] 
-                if(np.abs(flowmatrix[node1, node2]) > (1 + redun_rate)*self.flowcapmatrix[node1, node2]):
+                if (np.abs(flowmatrix[node1, node2]) > (1 + redun_rate)*self.flowcapmatrix[node1, node2]):
                     # print(node1, node2, flowmatrix[node1, node2], self.flowcapmatrix[node1, node2])
                     link_seq_track[i] = 1
         
             #node failure caused by flow overload 
             for i in range(self.nodenum):
                 # print(i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
-                if((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + redun_rate)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
+                if ((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + redun_rate)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
                     # print(time, 'node', i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
                     node_seq_track[i] = 1
             
@@ -287,12 +290,12 @@ class System(object):
             #link failure caused by flow overload
             for i in range(self.arcnum):
                 node1, node2 = self.arclist[i, 0], self.arclist[i, 1] 
-                if(np.abs(flowmatrix[node1, node2]) > (1 + redun_rate)*self.flowcapmatrix[node1, node2]):
+                if (np.abs(flowmatrix[node1, node2]) > (1 + redun_rate)*self.flowcapmatrix[node1, node2]):
                     link_seq[i] = 1
             
             #node failure caused by flow overload 
             for i in range(self.nodenum):
-                if((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + redun_rate)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
+                if ((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + redun_rate)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
                     node_seq[i] = 1
             
             self.node_fail_evol.append(node_seq)
@@ -311,7 +314,7 @@ class System(object):
             self.flowmatrix_evol.append(flowmatrix)
                         
             #Check the stability: no newly failed nodes and links
-            if(np.sum(link_seq) == 0 and np.sum(node_seq) == 0):
+            if (np.sum(link_seq) == 0 and np.sum(node_seq) == 0):
                 break
     
 
@@ -812,14 +815,18 @@ def main():
     # performance under different types of attacks
     s.plot_performance_different_attack(attack_types=attack_types, n_repeat_random=1, is_save=False)
     
-    # restoration schedule after cascading failures under different types of attacks
-    attack_types = 'dc'
-    s.plot_repair_schedule(attack_types=attack_types, is_save=True)
-    
-    s.plot_resil(attack_types=['randomness','dc', 'bc'], n_repeat_random=2, is_save=True)
+#    # restoration schedule after cascading failures under different types of attacks
+#    attack_types = 'randomness'
+#    s.plot_repair_schedule(attack_types=attack_types, is_save=False)
+#    
+#    s.plot_resil(attack_types=['randomness','dc', 'bc'], n_repeat_random=2, is_save=True)
     
 
-main()        
+main()  
+
+
+# number of failed components over time
+      
     
     
 ## test optimization model

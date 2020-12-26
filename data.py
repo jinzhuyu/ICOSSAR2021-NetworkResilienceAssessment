@@ -29,6 +29,8 @@ g2p_arcnum = 1
 p_arcdata = arcdata.iloc[0:p_arcnum, :]
 g_arcdata = arcdata.iloc[p_arcnum:(p_arcnum + g_arcnum), :]
 g2p_arcdata = arcdata.iloc[(p_arcnum + g_arcnum):(p_arcnum + g_arcnum + p2g_arcnum), :]
-p2g_arcdata = arcdata.iloc[(p_arcnum + g_arcnum + p2g_arcnum):(p_arcnum + g_arcnum + p2g_arcnum + g2p_arcnum), :]
+#p2g_arcdata = arcdata.iloc[(p_arcnum + g_arcnum + p2g_arcnum):(p_arcnum + g_arcnum + p2g_arcnum + g2p_arcnum), :]
+
+# power to gas link is removed for now because the current flow redistribution cannot handle cycles with flow
 
 
