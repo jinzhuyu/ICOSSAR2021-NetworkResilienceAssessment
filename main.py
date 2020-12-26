@@ -167,6 +167,8 @@ class System(object):
             self.initial_fail_seq_onehotcode[np.array(self.initial_fail_seq)] = 1
         self.initial_fail_link_onehotcode = np.zeros(self.arcnum, dtype = int) #There are no initial failed links
         
+        # print(self.initial_fail_seq)
+        
         return self.initial_fail_seq
         
     def update_matrix_node_fail(self, adjmatrix, node_fail_seq):
@@ -231,14 +233,15 @@ class System(object):
                 else:
                     satisfynode[node] = flowin/2 #if not enough to supply for the demand of the node, supply a half
                     flowin = flowin/2
-
-                performance_gas = np.sum(satisfynode[:self.gas.nodenum])/np.sum(self.demand[:self.gas.nodenum])
-                
-                print('gas performance', performance_gas, 'node', node)
-                
-                
-#                performance_power = np.sum(satisfynode[-self.power.nodenum:])/np.sum(self.demand[-self.power.nodenum:])
-                performance_temp = performance_gas  # np.mean([performance_gas, performance_power])
+#                print('satisfied power demand', satisfynode[-self.power.nodenum:]/self.demand[-self.power.nodenum:])
+                    
+                if self.initial_fail_seq != []:
+                    performance_gas = np.sum(satisfynode[:self.gas.nodenum])/np.sum(self.demand[:self.gas.nodenum])
+                    performance_power = np.sum(satisfynode[-self.power.nodenum:])/np.sum(self.demand[-self.power.nodenum:])
+                else:
+                    performance_gas =1
+                    performance_power = 1
+                performance_temp = np.mean([performance_gas, performance_power])
                 self.performance.append(performance_temp) #Track down the performance
                 
                 #Redistribute the flow, here we can introduce some randomness to account for the uncertainty
@@ -274,7 +277,8 @@ class System(object):
             #node failure caused by flow overload 
             for i in range(self.nodenum):
                 # print(i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
-                if ((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + redun_rate)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
+                if ((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > \
+                    (1 + redun_rate)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
                     # print(time, 'node', i, np.sum(flowmatrix[:, i]*self.convratematrix[:, i]), np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))
                     node_seq_track[i] = 1
             
@@ -295,7 +299,8 @@ class System(object):
             
             #node failure caused by flow overload 
             for i in range(self.nodenum):
-                if ((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > (1 + redun_rate)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
+                if ((np.abs(np.sum(flowmatrix[:, i]*self.convratematrix[:, i]))) > \
+                    (1 + redun_rate)*np.abs(np.sum(self.flowmatrix_evol[0][:, i]*self.convratematrix[:, i]))):
                     node_seq[i] = 1
             
             self.node_fail_evol.append(node_seq)
@@ -338,7 +343,7 @@ class System(object):
     #%%
     def compare_attack_types(self, attack_types = ['randomness', 'dc', 'bc', 'kc', 'cc'],
                              attack_portions=np.round(np.arange(0,1.001,0.05),2),
-                             redun_rate = 0.2, n_repeat_random=50):
+                             redun_rate = 0.5, n_repeat_random=50):
         '''
         obtain network performance given different failure types and failure rate
         
@@ -813,7 +818,9 @@ def main():
     
     # plot
     # performance under different types of attacks
-    s.plot_performance_different_attack(attack_types=attack_types, n_repeat_random=1, is_save=False)
+    s.plot_performance_different_attack(attack_types=attack_types,
+                                        attack_portions=np.round(np.arange(0,0.1,0.03),2),
+                                        redun_rate = 0.3, n_repeat_random=50, is_save=False)
     
 #    # restoration schedule after cascading failures under different types of attacks
 #    attack_types = 'randomness'
@@ -823,6 +830,10 @@ def main():
     
 
 main()  
+
+
+
+
 
 
 # number of failed components over time

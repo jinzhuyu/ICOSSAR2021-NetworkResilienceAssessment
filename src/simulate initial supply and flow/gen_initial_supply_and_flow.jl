@@ -23,19 +23,19 @@ include("./readin.jl")
 ###############################################
 # function
 # construct the min cost model to check if a valid initial feasible flow with no slack and capped flow rate exists.
-function minCost(netList, networkData, interList, flowRateUB=0.85)
+function minCost(netList, networkData, interList, flowRateUB=0.85, supRate=1)
     mp = Model(optimizer_with_attributes(() -> Gurobi.Optimizer(GUROBI_ENV), "OutputFlag" => 1))
 
     # decision variables
     @variable(mp, f[n in netList, k in networkData[n].inbrList]>=0)
     @variable(mp, h[interI in 1:length(interList)]>=0)
-    @variable(mp, 0 <= sup[n in netList, i in networkData[n].IDList] <= networkData[n].sc[i])
+    @variable(mp, 0 <= sup[n in netList, i in networkData[n].IDList] <= networkData[n].sc[i]*supRate)
 
     # constraints
-    # flow balance
+    # flow balance: outflow - inflow + transformed flow from other network = supply - demand
     @constraint(mp, flowbalance[n in netList, i in networkData[n].IDList],
         sum(f[n,k] for k in networkData[n].inbrList if i == k[1]) - sum(f[n,k] for k in networkData[n].inbrList if i == k[2]) +
-            sum(h[interI] for interI in 1:length(interList) if (interList[interI].startNode == i)&(interList[interI].startNet == n))
+            - sum(h[interI]*interList[interI].convRate for interI in 1:length(interList) if (interList[interI].endNet == n)&(interList[interI].endNode == i))
             == sup[n,i] - networkData[n].b[i])
 
     # flow capacity
@@ -57,7 +57,7 @@ function minCost(netList, networkData, interList, flowRateUB=0.85)
             push!(interDict[(endNet,endN)], interI)
         end
     end
-    @constraint(mp, interCapacity[n in netList, i in networkData[n].IDList (n,i) in keys(interDict)],
+    @constraint(mp, interCapacity[n in netList, i in networkData[n].IDList; (n,i) in keys(interDict)],
         sup[n,i] == sum(h[interI]*interList[interI].convRate for interI in 1:length(interList) if (interList[interI].endNet == n)&(interList[interI].endNode == i)))
 
     # objective function
@@ -68,9 +68,9 @@ function minCost(netList, networkData, interList, flowRateUB=0.85)
 end
 
 
-function solve_and_print(netList,networkData,interList, flowRateUB=0.85)
+function solve_and_print(netList,networkData,interList, flowRateUB=0.85, supRate=1)
     # build and solve the model
-    modelMinCost = minCost(netList,networkData,interList, flowRateUB)
+    modelMinCost = minCost(netList,networkData,interList, flowRateUB, supRate)
     optimize!(modelMinCost)
 
     # get results
@@ -106,10 +106,10 @@ function solve_and_print(netList,networkData,interList, flowRateUB=0.85)
     end
 end
 
-function main()
+function run_main()
     # load data from case_49 folder
-    netList,networkData,interList = loadData("./case_49/")
-    solve_and_print(netList,networkData,interList, flowRateUB=0.85)
+    netList, networkData, interList = loadData("./data/case_49/")
+    solve_and_print(netList, networkData, interList, flowRateUB=0.80, supRate==1)
 end
 
-main()
+run_main()
