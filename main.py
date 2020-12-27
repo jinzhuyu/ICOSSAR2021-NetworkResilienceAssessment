@@ -398,7 +398,7 @@ class System(object):
         
         plt.grid(axis='both')
                 
-        legend_labels = ('Random', 'Degree-based', 'Betweenness-based', 'Katz-based', 'Closeness-based')[:performance_df.shape[1]]
+        legend_labels = ('Random', 'Degree-based', 'Betweenness-based', 'Closeness-based', 'Katz-based')[:performance_df.shape[1]]
         plt.legend(legend_labels)
         
         if is_save:
@@ -598,7 +598,7 @@ class System(object):
         # 6.0 query optimization results    
         # 6.1 check solution status
         if status == OptimizationStatus.OPTIMAL:
-            print('optimal solution: {}'.format(model.objective_value))
+            # print('optimal solution: {}'.format(model.objective_value))
         
             # 6.2 get objective value and x
             obj_value = model.objective_value
@@ -726,7 +726,7 @@ class System(object):
         plt.legend(handles, labels, loc='lower right')
         
         if is_save:
-            plt.savefig('repair_schedule.pdf')
+            plt.savefig('repair_schedule_{}.pdf'.format(attack_types))
             
         plt.show()
     
@@ -791,7 +791,7 @@ class System(object):
         
         plt.grid(axis='both')
                 
-        legend_labels = ('Random', 'Degree-based', 'Betweenness-based', 'Katz-based', 'Closeness-based')[:resil_df.shape[1]]
+        legend_labels = ('Random', 'Degree-based', 'Betweenness-based', 'Closeness-based', 'Katz-based')[:resil_df.shape[1]]
         plt.legend(legend_labels, loc='lower right')
         
         if is_save:
@@ -814,22 +814,25 @@ def main():
     
     ## compare performance under different types of attacks
     #attack_portions = np.round(np.arange(0,1.02,0.05), 2)
-    attack_types = ['randomness'] #, 'dc', 'bc']
+    attack_types = ['randomness', 'dc', 'bc', 'cc']
     
     # plot
     # performance under different types of attacks
+    REDUN_RATE = 0.4
+    N_REPEAT = 50
     s.plot_performance_different_attack(attack_types=attack_types,
-                                        attack_portions=np.round(np.arange(0,0.1,0.03),2),
-                                        redun_rate = 0.3, n_repeat_random=50, is_save=False)
+                                        attack_portions=np.round(np.arange(0,1.01,0.1),2),
+                                        redun_rate=REDUN_RATE, n_repeat_random=N_REPEAT, is_save=True)
     
-#    # restoration schedule after cascading failures under different types of attacks
-#    attack_types = 'randomness'
-#    s.plot_repair_schedule(attack_types=attack_types, is_save=False)
-#    
-#    s.plot_resil(attack_types=['randomness','dc', 'bc'], n_repeat_random=2, is_save=True)
+    # restoration schedule after cascading failures under different types of attacks
+    attack_types = 'cc'
+    s.plot_repair_schedule(attack_types=attack_types, redun_rate=REDUN_RATE, is_save=True)
+    
+    s.plot_resil(attack_types=['randomness','dc', 'bc', 'cc'], redun_rate=REDUN_RATE,
+                 n_repeat_random=N_REPEAT, is_save=True)
     
 
-main()  
+#main()  
 
 
 
