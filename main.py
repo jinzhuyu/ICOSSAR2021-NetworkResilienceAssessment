@@ -447,7 +447,8 @@ class System(object):
     # optimize the repair schedule  
     def optimize_restore(self, attack_types = 'randomness',
                          attack_portions=0.2,
-                         redun_rate=0.2):
+                         redun_rate=0.2,
+                         model_type='flow'):
     
         '''optimize the restoration of damaged components
         input:
@@ -474,7 +475,7 @@ class System(object):
             https://pysal.org/spaghetti/notebooks/transportation-problem.html
         '''
         # x[i,t] - binary: whether or not to restore a node at time t, 0 otherwise.
-        # y[k,t] - binary: whether or not to restore a link at time t, 0 otherwise.
+        # y[i,t] - binary: whether or not to an link functions at time t, 0 otherwise.
         
         # import packages/functions
         from mip import Model, minimize, xsum, BINARY, OptimizationStatus
@@ -504,11 +505,14 @@ class System(object):
         # 2.3 flow, supply, demand, and slack
         flow = [[model.add_var(name="flow({},{})".format(k, t), lb=0) for t in time_list] for k in np.arange(num_arc)]   
         supply = [[model.add_var(name="supply({},{})".format(i, t), lb=0) for t in time_list] for i in np.arange(num_node)] 
-        slack = [[model.add_var(name="slack({},{})".format(i, t), lb=0) for t in time_list] for i in np.arange(num_node)] 
-         
-        # 3 obejctive function
-        node_demand_idx = [idx for idx, val in enumerate(self.demand) if val > 0] 
-        model.objective = minimize(xsum(xsum((slack[i][t]/self.demand[i]) for i in node_demand_idx) for t in time_list))
+        slack = [[model.add_var(name="slack({},{})".format(i, t), lb=0) for t in time_list] for i in np.arange(num_node)]
+        
+        # seudo variable: resilience at each time step
+        resil = [model.add_var(name="resilience({})".format(t), lb=0) for t in time_list]
+
+        # 3 obejctive function: min -1* sum of resilience at each time step
+        model.objective = minimize(xsum(-1*resil[t] for t in time_list))
+        
         
         # 4 add constraints
         # 4.1 component will be restored at one of the time periods
@@ -524,6 +528,7 @@ class System(object):
         for t in time_list:
             model.add_constr(xsum(x_node[i][t] for i in np.arange(num_node)) +
                              xsum(x_arc[k][t] for k in np.arange(num_arc)) <= num_restore_max)
+    
     
         # 4.3 flow conservation
         # outflow - inflow = supply + slack - demand
@@ -541,13 +546,13 @@ class System(object):
                 if self.arc_id_list[k][1]==self.node_id_list[i] and self.conv_rate[k]!=1:
                     for t in time_list:
                         model.add_constr(supply[i][t] <= self.conv_rate[k]*flow[k][t])
-        
+    
         # 4.4 ub of flow, supply, and slack
-        # 4.4.1.1 add auxillary variables to delinearize the product of binary variables
+        # 4.4.1.1 add auxillary variables to linearize the product of binary variables
         aux_z_arc = [[model.add_var(name="aux_z_arc({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in np.arange(num_arc)] 
         for t in time_list:
             for k in np.arange(num_arc):
-                # use auxillary variables to delinearize the product of binary variables
+                # use auxillary variables to linearize the product of binary variables
                 start_node_idx = self.node_id_list.index(self.arc_id_list[k][0])
                 end_node_idx = self.node_id_list.index(self.arc_id_list[k][1])
                 n_binary_var = 3
@@ -562,13 +567,20 @@ class System(object):
                 
                 # 4.4.1.2 flow cap
                 # flow will be zeros unless the start, end node nad the arc itsel are all functional
-                model.add_constr(flow[k][t] <= aux_z_arc[k][t]*self.flow_cap[k])
+                if model_type=='flow':
+                    model.add_constr(flow[k][t] <= aux_z_arc[k][t]*self.flow_cap[k])
+                else:
+                    model.add_constr(flow[k][t] <= aux_z_arc[k][t]*1e5)
     
                 
             # 4.4.2 slack and supply cap
             for i in np.arange(num_node):
                     model.add_constr(slack[i][t] <= self.demand[i])
-                    model.add_constr(supply[i][t] <= y_node[i][t]*self.supply_cap[i])
+                    if model_type=='flow':
+                        model.add_constr(supply[i][t] <= y_node[i][t]*self.supply_cap[i])
+                    else:
+                        model.add_constr(supply[i][t] <= y_node[i][t]*1e5)
+                        
                 
         # 4.5.0
         for t in time_list:  # start from the second time period
@@ -590,6 +602,22 @@ class System(object):
                     model.add_constr(y_node[i][t] <= y_node[i][t-1] + x_node[i][t-1])
                 for k in np.arange(num_arc):
                     model.add_constr(y_arc[k][t] <= y_arc[k][t-1] + x_arc[k][t-1])
+
+
+        # 4.6 calculate flow-based resilience or topology-based resilience
+        node_demand_idx = [idx for idx, demand_val in enumerate(self.demand) if demand_val > 0] 
+        if model_type == 'flow':
+            for t in time_list:
+                # proportion of satisfied demand
+                demand_satify_rate = np.mean(1-slack[np.where(self.demand!=0), t]/self.demand[np.where(self.demand!=0)])
+                model.add_constr(resil[t] >= demand_satify_rate)
+                model.add_constr(resil[t] <= demand_satify_rate)
+            else:
+                # proportion of demand nodes whose slack is lower than demand, i.e. demand node can receive some supply, irrespective of the amount.
+                node_demand_receive_supply = [demand_val for idx, demand_val in enumerate(self.demand) if demand_val > slack[idx,t]]
+                demand_connect_to_supply_rate = len(node_demand_receive_supply)/len(node_demand_idx)
+                model.add_constr(resil[t] >= demand_connect_to_supply_rate)
+                model.add_constr(resil[t] <= demand_connect_to_supply_rate)            
             
         # 5.0 solve the model and check status
         model.max_gap = 1e-5
@@ -607,7 +635,7 @@ class System(object):
             # print('model has {} vars, {} constraints and {} nzs'.format(model.num_cols,\
                         # model.num_rows, model.num_nz))
                    
-            return obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list, y_node_init, y_arc_init
+            return obj_value, x_node, x_arc, y_node, y_arc, resil, time_list, y_node_init, y_arc_init
         
         else:
             print('Infeasible or unbounded problem')
@@ -629,11 +657,12 @@ class System(object):
     # 2.2 solve the model and extract solutions
     def get_solution(self, attack_types = 'randomness',
                      attack_portions=0.2,
-                     redun_rate = 0.2):
+                     redun_rate = 0.2,
+                     model_type='flow'):
         
         # 1 solve the model
-        obj_value, x_node, x_arc, y_node, y_arc, slack, supply, flow, time_list, y_node_init, y_arc_init = \
-            self.optimize_restore(attack_types=attack_types, attack_portions=attack_portions, redun_rate=redun_rate)
+        obj_value, x_node, x_arc, y_node, y_arc, resil, time_list, y_node_init, y_arc_init = \
+            self.optimize_restore(attack_types=attack_types, attack_portions=attack_portions, redun_rate=redun_rate, model_type=model_type)
                
         # 2 extract results
         # extract x and y
@@ -643,22 +672,26 @@ class System(object):
         #y_arc_arr = convert_solu_list_to_arr(y_arc, time_list)
         #y_node_arr = convert_solu_list_to_arr(y_node, time_list)
         
-        # extract slack and supply   
-        slack_arr = self.convert_solu_list_to_arr(slack)  
+        # extract resilience  
+        resil_arr = self.convert_solu_list_to_arr(resil)  
         #supply_arr = convert_solu_list_to_arr(supply, time_list) 
-    
-        return x_node_arr, x_arc_arr, slack_arr, time_list, y_node_init, y_arc_init
-    
+        
+        return x_node_arr, x_arc_arr, resil_arr, time_list, y_node_init, y_arc_init
+
+        
     # 3 visualize results
     # 3.1.1 prepare schedule data
     def get_schedule_df(self, attack_types='randomness',
                         attack_portions=0.2,
-                        redun_rate=0.2):
+                        redun_rate=0.2,
+                        model_type='flow'):
         # store scheduling resulst in a df
             # df: index: damaged component; columns: start_time, duration, finish time
         # get damaged component id
-        x_node_arr, x_arc_arr, slack_arr, time_list, y_node_init, y_arc_init = \
+
+        x_node_arr, x_arc_arr, resil_arr, time_list, y_node_init, y_arc_init = \
             self.get_solution(attack_types=attack_types, attack_portions=attack_portions, redun_rate=redun_rate)
+
         comp_list = self.node_id_list + self.arc_id_list
         # due to randomness in cascading failure, get damage state can only be called once within the function for solving the problem
         # y_node_init, y_arc_init = self.get_damage_state(attack_types=attack_types,attack_portions=attack_portions, redun_rate=redun_rate)
@@ -683,7 +716,8 @@ class System(object):
     # 3.1.2 plot schedule
     def plot_repair_schedule(self, attack_types = 'randomness',
                              attack_portions=0.2,
-                             redun_rate=0.2, is_save=True):
+                             redun_rate=0.2, is_save=True,
+                             model_type='flow'):
         # plot the restoreation schedule
             # refs.: https://towardsdatascience.com/from-the-bridge-to-tasks-planning-build-gannt-chart-in-python-r-and-tableau-7256fb7615f8
                 # https://plotly.com/python/gantt/
@@ -726,7 +760,7 @@ class System(object):
         plt.legend(handles, labels, loc='lower right')
         
         if is_save:
-            plt.savefig('repair_schedule_{}.pdf'.format(attack_types))
+            plt.savefig('repair_schedule_{}_{}.pdf'.format(attack_types, model_type))
             
         plt.show()
     
@@ -734,7 +768,8 @@ class System(object):
     def get_resil_df(self, attack_types = ['randomness'],
                      attack_portions=0.2,
                      redun_rate=0.2,
-                     n_repeat_random=50):
+                     n_repeat_random=50,
+                     model_type='flow'):
         '''get df of resilience over time under each attack types
         
         output:
@@ -750,23 +785,23 @@ class System(object):
         resil_arr_3d = np.ones([self.nodenum+self.arcnum, n_attack_types, n_repeat_random])  # time list is sufficiently large
         for i in np.arange(len(attack_types)):
             for j in np.arange(n_repeat_random):
-                _, _, slack_arr, time_list, _, _ = self.get_solution(attack_types=attack_types[i],
+
+                x_node_arr, x_arc_arr, resil_arr, time_list, y_node_init, y_arc_init = self.get_solution(attack_types=attack_types[i],
                                                                      attack_portions=attack_portions,
-                                                                     redun_rate=redun_rate)        
+                                                                     redun_rate=redun_rate, model_type=model_type)        
                 # resilience at each time point
-                demand_satified_rate = 1 - slack_arr[np.where(self.demand!=0), :][0]/self.demand[np.where(self.demand!=0)][:, None]
-                resil_temp = np.mean(demand_satified_rate, axis=0)
+                resil_temp = resil_arr               
                 time_max_temp = time_list[np.where(resil_temp==1)[-1][0]] + 1  # time to full restoration. [0]: get value of array
-                resil_arr_3d[:time_max_temp, i, j] = resil_temp[:time_max_temp]
+                resil_arr_3d[:time_max_temp, i, j] = resil_temp[:time_max_temp]                    
                 # update number of time periods
                 if time_max_temp > time_max:
                     time_max = time_max_temp
         # get mean over n_repeat_random
-        resil_arr = np.mean(resil_arr_3d, axis=2)
+        resil_arr_mean = np.mean(resil_arr_3d, axis=2)
         # create df
         # add time periods as index
         idx = [item for item in range(1, time_max+1)]
-        resil_df = pd.DataFrame(data=resil_arr[:time_max,:], columns=attack_types, index=idx)      
+        resil_df = pd.DataFrame(data=resil_arr_mean[:time_max,:], columns=attack_types, index=idx)      
         
         return resil_df 
 
@@ -834,12 +869,6 @@ def main():
 
 #main()  
 
-
-
-
-
-
-# number of failed components over time
       
     
     
