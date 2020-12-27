@@ -854,20 +854,21 @@ def main():
     # plot
     # performance under different types of attacks
     REDUN_RATE = 0.4
-    N_REPEAT = 50
+    N_REPEAT = 2
+    is_save = False
     s.plot_performance_different_attack(attack_types=attack_types,
-                                        attack_portions=np.round(np.arange(0,1.01,0.1),2),
-                                        redun_rate=REDUN_RATE, n_repeat_random=N_REPEAT, is_save=True)
+                                        attack_portions=np.round(np.arange(0,0.15,0.1),2),
+                                        redun_rate=REDUN_RATE, n_repeat_random=N_REPEAT, is_save=is_save)
     
     # restoration schedule after cascading failures under different types of attacks
     attack_types = 'cc'
-    s.plot_repair_schedule(attack_types=attack_types, redun_rate=REDUN_RATE, is_save=True)
+    s.plot_repair_schedule(attack_types=attack_types, redun_rate=REDUN_RATE, is_save=is_save)
     
     s.plot_resil(attack_types=['randomness','dc', 'bc', 'cc'], redun_rate=REDUN_RATE,
-                 n_repeat_random=N_REPEAT, is_save=True)
+                 n_repeat_random=N_REPEAT, is_save=is_save)
     
 
-#main()  
+main()  
 
       
     
