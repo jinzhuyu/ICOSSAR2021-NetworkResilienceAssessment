@@ -623,14 +623,13 @@ class System(object):
             # add auxilliary variable at each node, indicating weather or not node can receive supply from supply nodes
             aux_z_node = [[model.add_var(name="aux_z_node({},{})".format(i, t), var_type=BINARY) \
                            for t in time_list] for i in np.arange(num_node)]
-            M_big = 1e5
             M_small = 1e-5
             for t in time_list:
-                for i in np.arange(num_node):
+                for i in node_demand_idx:
                     # proportion of demand nodes whose slack is lower than demand, i.e. demand node can receive some supply, irrespective of the amount.
                     # if slack = demand, aux_z_node = 0, else aux_z_node = 1.
-                    model.add_constr(self.demand[i] - slack[i][t] <= M_big*aux_z_node[i][t])
-                    model.add_constr(self.demand[i] - slack[i][t] >= M_small*aux_z_node[i][t])            
+                    model.add_constr(slack[i][t]/self.demand[i] <= 1 - M_small*aux_z_node[i][t])
+                    model.add_constr(slack[i][t]/self.demand[i] >= 1 - aux_z_node[i][t])            
                     
                 # resilience at each time point = proportion of demand nodes that can receive supply    
                 model.add_constr(resil[t] == xsum(aux_z_node[i][t] for i in node_demand_idx)/len(node_demand_idx))         
@@ -669,10 +668,10 @@ class System(object):
                 for t in np.arange(len(var[0])):
                     var_arr[j,t] = var[j][t].x
         else:
-            var_arr = np.zeros([len(var), 1])
+            var_arr = np.ones([len(var), 1])
             for t in np.arange(len(var)):
-                var_arr[t] = var[t].x            
-        
+                var_arr[t,0] = var[t].x            
+            var_arr[np.isnan(var_arr)] = 1.0
         return var_arr
     
     # 2.2 solve the model and extract solutions
@@ -815,7 +814,8 @@ class System(object):
                 resil_temp = resil_arr
                 print('resil: ', resil_temp)
                 print('time list: ', time_list)
-                time_max_temp = [idx for idx,val in enumerate(time_list) if resil_temp[idx]==1][-1]  # time to full restoration. [0]: get value of array
+                time_max_temp = [idx for idx,val in enumerate(time_list) if resil_temp[idx,0]>=1][0] + 1  # time to full restoration.
+                print('time max', time_max)
                 resil_arr_3d[:time_max_temp, i, j] = resil_temp[:time_max_temp].ravel()                   
                 # update number of time periods
                 if time_max_temp > time_max:
@@ -839,13 +839,17 @@ class System(object):
                    model_type='flow'):
         
         resil_df = self.get_resil_df(attack_types=attack_types, attack_portions=attack_portions,
-                                     redun_rate=redun_rate, n_repeat_random=n_repeat_random,  model_type= model_type)
+                                     redun_rate=redun_rate, n_repeat_random=n_repeat_random, model_type= model_type)
         
         plt.figure(figsize=(4, 3))
         
         styles = ['k-','b--','r-.X','c--o','m--s'][:resil_df.shape[1]]
         resil_df.plot(style=styles)
         
+        # show integer only in xticks
+        plt.xticks(resil_df.index.to_list())
+
+         
         plt.xlabel('Time period')
         plt.ylabel('Resilience')
         
@@ -857,7 +861,7 @@ class System(object):
         plt.legend(legend_labels, loc='lower right')
         
         if is_save:
-            plt.savefig('resilience.pdf')
+            plt.savefig('resilience_{}_{}.pdf'.format(attack_portions,model_type))
         plt.show()
 
    
@@ -881,8 +885,8 @@ def main():
     # plot
     # performance under different types of attacks
     REDUN_RATE = 0.4
-    N_REPEAT = 5
-    is_save = False
+    N_REPEAT = 50
+    is_save = True
     # s.plot_performance_different_attack(attack_types=attack_types,
     #                                     attack_portions=np.round(np.arange(0,0.5,0.1),2),
     #                                     redun_rate=REDUN_RATE, n_repeat_random=N_REPEAT,
@@ -890,17 +894,18 @@ def main():
     
     # restoration schedule after cascading failures under different types of attacks
     attack_types = 'cc'
-    model_type = 'node'
-    s.plot_repair_schedule(attack_types=attack_types, redun_rate=REDUN_RATE, is_save=is_save,
-                           model_type=model_type)
+    model_type = 'topo'
+    attack_portions = 0.2
+    # s.plot_repair_schedule(attack_types=attack_types, attack_portions= attack_portions,
+    #                        redun_rate=REDUN_RATE, is_save=is_save,
+    #                        model_type=model_type)
     
-    s.plot_resil(attack_types=['randomness','dc', 'bc', 'cc'], redun_rate=REDUN_RATE,
-                 n_repeat_random=N_REPEAT, is_save=is_save, model_type =model_type)
-    
-
-main()  
-
-        
+    attack_types=['randomness','dc', 'bc', 'cc']
+    s.plot_resil(attack_types=attack_types, attack_portions=attack_portions, 
+                 redun_rate=REDUN_RATE,n_repeat_random=N_REPEAT,
+                 is_save=is_save, model_type =model_type)
+     
+main()       
     
 ## test optimization model
     # 1 import data
