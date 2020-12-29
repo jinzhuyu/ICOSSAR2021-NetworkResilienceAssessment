@@ -243,7 +243,7 @@ class System(object):
                     performance_gas = np.sum(satisfynode[:self.gas.nodenum])/np.sum(self.demand[:self.gas.nodenum])
                     performance_power = np.sum(satisfynode[-self.power.nodenum:])/np.sum(self.demand[-self.power.nodenum:])
                 else:
-                    performance_gas =1
+                    performance_gas = 1
                     performance_power = 1
                 performance_temp = np.mean([performance_gas, performance_power])
                 self.performance.append(performance_temp) #Track down the performance
@@ -276,7 +276,7 @@ class System(object):
                 node1, node2 = self.arclist[i, 0], self.arclist[i, 1] 
                 if (np.abs(flowmatrix[node1, node2]) > (1 + redun_rate)*self.flowcapmatrix[node1, node2]):
                     # print(node1, node2, flowmatrix[node1, node2], self.flowcapmatrix[node1, node2])
-                    link_seq_track[i] = 1
+                    link_seq_track[i] = 1\
         
             #node failure caused by flow overload 
             for i in range(self.nodenum):
@@ -804,23 +804,43 @@ class System(object):
         time_max = 1
         resil_arr_3d = np.ones([self.nodenum+self.arcnum, n_attack_types, n_repeat_random])  # time list is sufficiently large
         for i in np.arange(len(attack_types)):
-            for j in np.arange(n_repeat_random):
-
-                x_node_arr, x_arc_arr, resil_arr, time_list, y_node_init, y_arc_init = self.get_solution(attack_types=attack_types[i],
-                                                                     attack_portions=attack_portions,
-                                                                     redun_rate=redun_rate,
-                                                                     model_type=model_type)        
-                # resilience at each time point
-                resil_temp = resil_arr
-                print('resil: ', resil_temp)
-                print('time list: ', time_list)
-                time_max_temp = [idx for idx,val in enumerate(time_list) if resil_temp[idx,0]>=1][0] + 1  # time to full restoration.
-                print('time max', time_max)
-                resil_arr_3d[:time_max_temp, i, j] = resil_temp[:time_max_temp].ravel()                   
-                # update number of time periods
-                if time_max_temp > time_max:
-                    time_max = time_max_temp
-        print('time max: ', time_max)
+            for j in np.arange(n_repeat_random):    
+                if attack_types[i] == 'randomness':   
+                    x_node_arr, x_arc_arr, resil_arr, time_list, y_node_init, y_arc_init = \
+                        self.get_solution(attack_types=attack_types[i],
+                        attack_portions=attack_portions,
+                        redun_rate=redun_rate,
+                        model_type=model_type)        
+                    # resilience at each time point
+                    resil_temp = resil_arr
+                    # print('resil: ', resil_temp)
+                    # print('time list: ', time_list)
+                    time_max_temp = [idx for idx,val in enumerate(time_list) if resil_temp[idx,0]>=1][0] + 1  # time to full restoration.
+                    # print('time max', time_max)
+                    resil_arr_3d[:time_max_temp, i, j] = resil_temp[:time_max_temp].ravel()                   
+                    # update number of time periods
+                    if time_max_temp > time_max:
+                        time_max = time_max_temp
+                else:
+                    if j==0:                       
+                        x_node_arr, x_arc_arr, resil_arr, time_list, y_node_init, y_arc_init = \
+                            self.get_solution(attack_types=attack_types[i],
+                            attack_portions=attack_portions,
+                            redun_rate=redun_rate, model_type=model_type)        
+                        # resilience at each time point
+                        resil_temp = resil_arr
+                        # print('resil: ', resil_temp)
+                        # print('time list: ', time_list)
+                        time_max_temp = [idx for idx,val in enumerate(time_list) if resil_temp[idx,0]>=1][0] + 1  # time to full restoration.
+                        # print('time max', time_max)
+                        resil_arr_3d[:time_max_temp, i, j] = resil_temp[:time_max_temp].ravel()                   
+                        # update number of time periods
+                        if time_max_temp > time_max:
+                            time_max = time_max_temp  
+                    
+                    else:
+                        resil_arr_3d[:time_max_temp, i, j] = resil_arr_3d[:time_max_temp, i, j-1]                                  
+        # print('time max: ', time_max)
         # get mean over n_repeat_random
         resil_arr_mean = np.mean(resil_arr_3d, axis=2)
         # create df
@@ -854,6 +874,8 @@ class System(object):
         plt.ylabel('Resilience')
         
         plt.ylim(top=1.02)
+        if model_type != 'flow':
+            plt.ylim(bottom=0)
         
         plt.grid(axis='both')
                 
@@ -895,7 +917,7 @@ def main():
     # restoration schedule after cascading failures under different types of attacks
     attack_types = 'cc'
     model_type = 'topo'
-    attack_portions = 0.2
+    attack_portions = 0.6
     # s.plot_repair_schedule(attack_types=attack_types, attack_portions= attack_portions,
     #                        redun_rate=REDUN_RATE, is_save=is_save,
     #                        model_type=model_type)
