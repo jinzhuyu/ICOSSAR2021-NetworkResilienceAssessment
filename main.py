@@ -15,8 +15,6 @@ from matplotlib import pyplot as plt
 import os
 # dir_path = os.path.dirname(os.path.realpath(__file__))    # go to the directory of the current script
 
-#os.chdir('C://Users//Jinzh//OneDrive//GitHub//ICOSSAR2021')
-
 from sharefunction import set_default_plot_param
 set_default_plot_param(plt)
 
