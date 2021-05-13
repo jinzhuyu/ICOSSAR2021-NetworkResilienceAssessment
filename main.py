@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 import os
 # dir_path = os.path.dirname(os.path.realpath(__file__))    # go to the directory of the current script
 
-from sharefunction import set_default_plot_param
+from utils import set_default_plot_param
 set_default_plot_param(plt)
 
 import copy
