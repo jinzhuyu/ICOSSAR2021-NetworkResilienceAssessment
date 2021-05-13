@@ -325,7 +325,7 @@ class System(object):
                 break
     
 
-    # added functions start from here                 
+    ##########################                 
     # to do: plot the networks
     def plot_inter_networks(self, link_df, is_save=True):
         
@@ -925,7 +925,8 @@ def main():
                  redun_rate=REDUN_RATE,n_repeat_random=N_REPEAT,
                  is_save=is_save, model_type =model_type)
      
-main()       
+if __name__ == '__main__':
+    main()      
     
 ## test optimization model
     # 1 import data
