@@ -9,9 +9,11 @@ Julia/Jump
 
 Python MIP (Mixed-Integer Linear Programming) Tools
 
+
 **Other**
 
 Free feel to reach out if you have questions about the code.
 
 **Citation**
+
 We kindly ask you to cite our paper if you find our code helpful. 
