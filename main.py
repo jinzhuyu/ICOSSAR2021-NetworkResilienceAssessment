@@ -881,11 +881,7 @@ class System(object):
 
 # 3.2 restoration rate over time  
         
-def main():
-    
-    # change directory
-    #os.chdir('C:/Users/yuj5/Documents/GitHub/ICOSSAR2021')
-    
+def main():    
     # create network 
     power = network(dt.p_nodedata, dt.p_arcdata) # instantiate the power network
     gas = network(dt.g_nodedata, dt.g_arcdata) # instantiate the gas network
