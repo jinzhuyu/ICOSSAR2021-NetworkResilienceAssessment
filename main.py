@@ -2,21 +2,17 @@
 import numpy as np
 import math
 import random
-
+from math import ceil
+import copy
 import pandas as pd
 from matplotlib import pyplot as plt
-
+from mip import Model, minimize, xsum, BINARY, OptimizationStatus
 import os
 # dir_path = os.path.dirname(os.path.realpath(__file__))    # go to the directory of the current script
+import networkx as nx
 
 from utils import set_default_plot_param
 set_default_plot_param(plt)
-
-import copy
-import networkx as nx
-#import pygraphviz
-
-
 import data as dt
 from infrasnetwork import network
 #import failsimulation as fs
@@ -472,9 +468,6 @@ class System(object):
         # x[i,t] - binary: whether or not to restore a node at time t, 0 otherwise.
         # y[i,t] - binary: whether or not to an link functions at time t, 0 otherwise.
         
-        # import packages/functions
-        from mip import Model, minimize, xsum, BINARY, OptimizationStatus
-        
         # 0 get initial damage state
         y_node_init, y_arc_init = self.get_damage_state(attack_types=attack_types, attack_portions=attack_portions, redun_rate=redun_rate)
         
@@ -488,7 +481,6 @@ class System(object):
         # total restoration time
         num_restore_max = 2
         num_damage_comp = y_arc_init.count(0) + y_node_init.count(0)
-        from math import ceil
         time_list = list(range(ceil(num_damage_comp/num_restore_max) + 1))
         x_node = [[model.add_var(name="x({},{})".format(i, t), var_type=BINARY) for t in time_list] for i in np.arange(num_node)]
         x_arc = [[model.add_var(name="x({},{})".format(k, t), var_type=BINARY) for t in time_list] for k in np.arange(num_arc)]
