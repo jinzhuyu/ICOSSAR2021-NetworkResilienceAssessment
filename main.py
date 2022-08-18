@@ -1,10 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sat Dec 12 22:47:00 2020
-
-@author: 10624
-"""
-
 import numpy as np
 import math
 import random
@@ -21,7 +15,6 @@ set_default_plot_param(plt)
 import copy
 import networkx as nx
 #import pygraphviz
-
 
 
 import data as dt
