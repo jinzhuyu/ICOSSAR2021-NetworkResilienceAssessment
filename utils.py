@@ -1,10 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sat Dec 12 17:43:40 2020
-
-@author: 10624
-"""
-
 # set default plot parameters
 def set_default_plot_param(plt):
 	# %matplotlib inline
