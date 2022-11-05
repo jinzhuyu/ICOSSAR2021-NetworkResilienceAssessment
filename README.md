@@ -1,4 +1,4 @@
-This repo contains the code for the ICOSSAR 2021 paper titled Comparing Topology-based and Flow-based Resilience Assessment of Interdependent Infrastructure Networks.
+This repo contains the code for the ICOSSAR 2021 paper titled *Comparing Topology-based and Flow-based Resilience Assessment of Interdependent Infrastructure Networks*.
 
 We kindly ask you to cite our paper if you find our code helpful.
 
