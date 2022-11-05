@@ -8,4 +8,6 @@ To get the results in the paper, simply run the "main.py" file. Free feel to rea
 
 Julia/Jump
 
+Gurobi
+
 Python MIP (Mixed-Integer Linear Programming) Tools
