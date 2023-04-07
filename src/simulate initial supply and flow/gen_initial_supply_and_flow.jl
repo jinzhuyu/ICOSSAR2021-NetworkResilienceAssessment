@@ -16,7 +16,6 @@ using Statistics
 using CSV, DataFrames, JLD, HDF5
 const GUROBI_ENV = Gurobi.Env()
 
-cd("C:/Users/yuj5/Documents/GitHub/ICOSSAR2021")
 include("./readin.jl")
 
 
